@@ -165,6 +165,12 @@ XML
       raise "boom!"
     end
 
+    def increment_count
+      @counter ||= 0
+      @counter += 1
+      render plain: @counter
+    end
+
     private
       def generate_url(opts)
         url_for(opts.merge(action: "test_uri"))
@@ -177,7 +183,7 @@ XML
     @request.delete_header "PATH_INFO"
     @routes = ActionDispatch::Routing::RouteSet.new.tap do |r|
       r.draw do
-        ActiveSupport::Deprecation.silence do
+        ActionDispatch.deprecator.silence do
           get ":controller(/:action(/:id))"
         end
       end
@@ -655,7 +661,7 @@ XML
       set.draw do
         get "file/*path", to: "test_case_test/test#test_params"
 
-        ActiveSupport::Deprecation.silence do
+        ActionDispatch.deprecator.silence do
           get ":controller/:action"
         end
       end
@@ -988,6 +994,56 @@ XML
     post :render_json, body: { foo: "heyo" }.to_json, as: :json
     assert_equal({ "foo" => "heyo" }, response.parsed_body)
   end
+
+  def test_reset_instance_variables_after_each_request
+    get :increment_count
+    assert_equal "1", response.body
+
+    get :increment_count
+    assert_equal "1", response.body
+  end
+
+  def test_can_read_instance_variables_before_and_after_request
+    silence_warnings do
+      assert_nil @controller.instance_variable_get(:@counter)
+    end
+
+    get :increment_count
+    assert_equal "1", response.body
+    assert_equal 1, @controller.instance_variable_get(:@counter)
+
+    get :increment_count
+    assert_equal "1", response.body
+    assert_equal 1, @controller.instance_variable_get(:@counter)
+  end
+
+  def test_ivars_are_not_reset_if_they_are_given_a_value_before_any_requests
+    @controller.instance_variable_set(:@counter, 3)
+
+    get :increment_count
+    assert_equal "4", response.body
+    assert_equal 4, @controller.instance_variable_get(:@counter)
+
+    get :increment_count
+    assert_equal "5", response.body
+    assert_equal 5, @controller.instance_variable_get(:@counter)
+
+    get :increment_count
+    assert_equal "6", response.body
+    assert_equal 6, @controller.instance_variable_get(:@counter)
+  end
+
+  def test_ivars_are_reset_if_they_are_given_a_value_after_some_requests
+    get :increment_count
+    assert_equal "1", response.body
+    assert_equal 1, @controller.instance_variable_get(:@counter)
+
+    @controller.instance_variable_set(:@counter, 3)
+
+    get :increment_count
+    assert_equal "1", response.body
+    assert_equal 1, @controller.instance_variable_get(:@counter)
+  end
 end
 
 class ResponseDefaultHeadersTest < ActionController::TestCase
@@ -1020,7 +1076,7 @@ class ResponseDefaultHeadersTest < ActionController::TestCase
     @request.env["PATH_INFO"] = nil
     @routes = ActionDispatch::Routing::RouteSet.new.tap do |r|
       r.draw do
-        ActiveSupport::Deprecation.silence do
+        ActionDispatch.deprecator.silence do
           get ":controller(/:action(/:id))"
         end
       end
@@ -1030,8 +1086,11 @@ class ResponseDefaultHeadersTest < ActionController::TestCase
   test "response contains default headers" do
     get :leave_alone
 
-    # Response headers start out with the defaults
-    assert_equal @defaults.merge("Content-Type" => "text/html"), response.headers
+    expected_headers = @defaults.merge("Content-Type" => "text/html")
+
+    expected_headers.each do |key, value|
+      assert_equal value, @response.headers[key]
+    end
   end
 
   test "response deletes a default header" do
@@ -1149,7 +1208,7 @@ class AnonymousControllerTest < ActionController::TestCase
 
     @routes = ActionDispatch::Routing::RouteSet.new.tap do |r|
       r.draw do
-        ActiveSupport::Deprecation.silence do
+        ActionDispatch.deprecator.silence do
           get ":controller(/:action(/:id))"
         end
       end

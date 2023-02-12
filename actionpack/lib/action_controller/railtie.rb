@@ -14,7 +14,12 @@ module ActionController
     config.action_controller.log_query_tags_around_actions = true
     config.action_controller.wrap_parameters_by_default = false
 
+    config.eager_load_namespaces << AbstractController
     config.eager_load_namespaces << ActionController
+
+    initializer "action_controller.deprecator", before: :load_environment_config do |app|
+      app.deprecators[:action_controller] = ActionController.deprecator
+    end
 
     initializer "action_controller.assets_config", group: :all do |app|
       app.config.action_controller.assets_dir ||= app.config.paths["public"].first
@@ -37,10 +42,15 @@ module ActionController
         action_on_unpermitted_parameters = options.action_on_unpermitted_parameters
 
         if action_on_unpermitted_parameters.nil?
-          action_on_unpermitted_parameters = (Rails.env.test? || Rails.env.development?) ? :log : false
+          action_on_unpermitted_parameters = Rails.env.local? ? :log : false
         end
 
         ActionController::Parameters.action_on_unpermitted_parameters = action_on_unpermitted_parameters
+
+        unless options.allow_deprecated_parameters_hash_equality.nil?
+          ActionController::Parameters.allow_deprecated_parameters_hash_equality =
+            options.allow_deprecated_parameters_hash_equality
+        end
       end
     end
 
@@ -71,7 +81,8 @@ module ActionController
           :permit_all_parameters,
           :action_on_unpermitted_parameters,
           :always_permitted_parameters,
-          :wrap_parameters_by_default
+          :wrap_parameters_by_default,
+          :allow_deprecated_parameters_hash_equality
         )
 
         filtered_options.each do |k, v|
@@ -99,25 +110,28 @@ module ActionController
       end
     end
 
-    initializer "action_controller.eager_load_actions" do
-      ActiveSupport.on_load(:after_initialize) do
-        ActionController::Metal.descendants.each(&:action_methods) if config.eager_load
-      end
-    end
-
     initializer "action_controller.query_log_tags" do |app|
       query_logs_tags_enabled = app.config.respond_to?(:active_record) &&
         app.config.active_record.query_log_tags_enabled &&
         app.config.action_controller.log_query_tags_around_actions
 
       if query_logs_tags_enabled
-        app.config.active_record.query_log_tags += [:controller, :action]
+        app.config.active_record.query_log_tags |= [:controller] unless app.config.active_record.query_log_tags.include?(:namespaced_controller)
+        app.config.active_record.query_log_tags |= [:action]
 
         ActiveSupport.on_load(:active_record) do
           ActiveRecord::QueryLogs.taggings.merge!(
             controller:            ->(context) { context[:controller]&.controller_name },
             action:                ->(context) { context[:controller]&.action_name },
-            namespaced_controller: ->(context) { context[:controller].class.name if context[:controller] }
+            namespaced_controller: ->(context) {
+              if context[:controller]
+                controller_class = context[:controller].class
+                # based on ActionController::Metal#controller_name, but does not demodulize
+                unless controller_class.anonymous?
+                  controller_class.name.delete_suffix("Controller").underscore
+                end
+              end
+            }
           )
         end
       end

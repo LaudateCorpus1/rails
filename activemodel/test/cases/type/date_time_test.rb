@@ -11,6 +11,7 @@ module ActiveModel
         assert_nil type.cast("")
         assert_nil type.cast("  ")
         assert_nil type.cast("ABC")
+        assert_nil type.cast(" " * 129)
 
         datetime_string = ::Time.now.utc.strftime("%FT%T")
         assert_equal datetime_string, type.cast(datetime_string).strftime("%FT%T")
@@ -34,6 +35,13 @@ module ActiveModel
         type = Type::DateTime.new
         error = assert_raises(ArgumentError) { type.cast(a: 1) }
         assert_equal "Provided hash {:a=>1} doesn't contain necessary keys: [1, 2, 3]", error.message
+      end
+
+      test "serialize_cast_value is equivalent to serialize after cast" do
+        type = Type::DateTime.new(precision: 1)
+        value = type.cast("1999-12-31 12:34:56.789 -1000")
+
+        assert_equal type.serialize(value), type.serialize_cast_value(value)
       end
 
       private

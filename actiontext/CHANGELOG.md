@@ -1,48 +1,28 @@
-*   Fix an issue with how nested lists were displayed when converting to plain text
-
-    *Matt Swanson*
-
-*   Allow passing in a custom `direct_upload_url` or `blob_url_template` to `rich_text_area_tag`.
-
-    *Lucas Mansur*
-
-
-## Rails 7.0.0.alpha2 (September 15, 2021) ##
-
-*   No changes.
-
-
-## Rails 7.0.0.alpha1 (September 15, 2021) ##
-
-*   Make the Action Text + Trix JavaScript and CSS available through the asset pipeline.
-
-    *DHH*
-
-*   OpenSSL constants are now used for Digest computations.
-
-    *Dirkjan Bussink*
-
-*   Add support for passing `form:` option to `rich_text_area_tag` and
-    `rich_text_area` helpers to specify the `<input type="hidden" form="...">`
-    value.
+*   Update bundled Trix version from `1.3.1` to `2.0.4`.
 
     *Sean Doyle*
 
-*   Add `config.action_text.attachment_tag_name`, to specify the HTML tag that contains attachments.
+*   Apply `field_error_proc` to `rich_text_area` form fields.
 
-    *Mark VanLandingham*
+    *Kaíque Kandy Koga*
 
-*   Expose how we render the HTML _surrounding_ rich text content as an
-    extensible `layouts/action_view/contents/_content.html.erb` template to
-    encourage user-land customizations, while retaining private API control over how
-    the rich text itself is rendered by `action_text/contents/_content.html.erb`
-    partial.
+*   Action Text attachment URLs rendered in a background job (a la Turbo
+    Streams) now use `Rails.application.default_url_options` and
+    `Rails.application.config.force_ssl` instead of `http://example.org`.
+
+    *Jonathan Hefner*
+
+*   Support `strict_loading:` option for `has_rich_text` declaration
 
     *Sean Doyle*
 
-*   Add `with_all_rich_text` method to eager load all rich text associations on a model at once.
+*   Update ContentAttachment so that it can encapsulate arbitrary HTML content in a document.
 
-    *Matt Swanson*, *DHH*
+    *Jamis Buck*
 
+*   Fix an issue that caused the content layout to render multiple times when a
+    rich_text field was updated.
 
-Please check [6-1-stable](https://github.com/rails/rails/blob/6-1-stable/actiontext/CHANGELOG.md) for previous changes.
+    *Jacob Herrington*
+
+Please check [7-0-stable](https://github.com/rails/rails/blob/7-0-stable/actiontext/CHANGELOG.md) for previous changes.

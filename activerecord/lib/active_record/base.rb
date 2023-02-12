@@ -137,7 +137,7 @@ module ActiveRecord # :nodoc:
   #   anonymous = User.new(name: "")
   #   anonymous.name? # => false
   #
-  # Query methods will also respect any overwrites of default accessors:
+  # Query methods will also respect any overrides of default accessors:
   #
   #   class User
   #     # Has admin boolean column
@@ -151,8 +151,8 @@ module ActiveRecord # :nodoc:
   #   user.read_attribute(:admin)  # => true, gets the column value
   #   user[:admin] # => true, also gets the column value
   #
-  #   user.admin   # => false, due to the getter overwrite
-  #   user.admin?  # => false, due to the getter overwrite
+  #   user.admin   # => false, due to the getter override
+  #   user.admin?  # => false, due to the getter override
   #
   # == Accessing attributes before they have been typecasted
   #
@@ -311,11 +311,12 @@ module ActiveRecord # :nodoc:
     include Attributes
     include Locking::Optimistic
     include Locking::Pessimistic
+    include Encryption::EncryptableRecord
     include AttributeMethods
     include Callbacks
     include Timestamp
     include Associations
-    include ActiveModel::SecurePassword
+    include SecurePassword
     include AutosaveAssociation
     include NestedAttributes
     include Transactions
@@ -325,9 +326,10 @@ module ActiveRecord # :nodoc:
     include Serialization
     include Store
     include SecureToken
+    include TokenFor
     include SignedId
     include Suppressor
-    include Encryption::EncryptableRecord
+    include Normalization
   end
 
   ActiveSupport.run_load_hooks(:active_record, Base)

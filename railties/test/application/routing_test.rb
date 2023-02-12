@@ -130,6 +130,19 @@ module ApplicationTests
       assert_equal 404, last_response.status
     end
 
+    test "rails/health in production" do
+      app("production")
+
+      app_file "config/routes.rb", <<-RUBY
+        Rails.application.routes.draw do
+          get "up" => "rails/health#show", as: :rails_health_check
+        end
+      RUBY
+
+      get "/up"
+      assert_equal 200, last_response.status
+    end
+
     test "simple controller" do
       simple_controller
 
@@ -740,6 +753,18 @@ module ApplicationTests
         config.api_only = true
         config.action_dispatch.show_exceptions = false
         config.action_controller.allow_forgery_protection = true
+      RUBY
+
+      app "development"
+
+      get "/"
+      assert_equal 200, last_response.status
+    end
+
+    test "request to rails/welcome is successful when default_protect_from_forgery is false" do
+      add_to_config <<-RUBY
+        config.action_dispatch.show_exceptions = false
+        config.action_controller.default_protect_from_forgery = false
       RUBY
 
       app "development"

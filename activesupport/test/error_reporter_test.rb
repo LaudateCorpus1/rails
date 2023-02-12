@@ -2,27 +2,17 @@
 
 require_relative "abstract_unit"
 require "active_support/execution_context/test_helper"
+require "active_support/error_reporter/test_helper"
 
 class ErrorReporterTest < ActiveSupport::TestCase
   # ExecutionContext is automatically reset in Rails app via executor hooks set in railtie
   # But not in Active Support's own test suite.
   include ActiveSupport::ExecutionContext::TestHelper
-
-  class ErrorSubscriber
-    attr_reader :events
-
-    def initialize
-      @events = []
-    end
-
-    def report(error, handled:, severity:, context:)
-      @events << [error, handled, severity, context]
-    end
-  end
+  include ActiveSupport::ErrorReporter::TestHelper
 
   setup do
     @reporter = ActiveSupport::ErrorReporter.new
-    @subscriber = ErrorSubscriber.new
+    @subscriber = ActiveSupport::ErrorReporter::TestHelper::ErrorSubscriber.new
     @reporter.subscribe(@subscriber)
     @error = ArgumentError.new("Oops")
   end
@@ -31,14 +21,34 @@ class ErrorReporterTest < ActiveSupport::TestCase
     @reporter.set_context(section: "admin")
     error = ArgumentError.new("Oops")
     @reporter.report(error, handled: true)
-    assert_equal [[error, true, :warning, { section: "admin" }]], @subscriber.events
+    assert_equal [[error, true, :warning, "application", { section: "admin" }]], @subscriber.events
   end
 
   test "passed context has priority over the execution context" do
     @reporter.set_context(section: "admin")
     error = ArgumentError.new("Oops")
     @reporter.report(error, handled: true, context: { section: "public" })
-    assert_equal [[error, true, :warning, { section: "public" }]], @subscriber.events
+    assert_equal [[error, true, :warning, "application", { section: "public" }]], @subscriber.events
+  end
+
+  test "passed source is forwarded" do
+    error = ArgumentError.new("Oops")
+    @reporter.report(error, handled: true, source: "my_gem")
+    assert_equal [[error, true, :warning, "my_gem", {}]], @subscriber.events
+  end
+
+  test "#disable allow to skip a subscriber" do
+    @reporter.disable(@subscriber) do
+      @reporter.report(ArgumentError.new("Oops"), handled: true)
+    end
+    assert_equal [], @subscriber.events
+  end
+
+  test "#disable allow to skip a subscribers per class" do
+    @reporter.disable(ErrorSubscriber) do
+      @reporter.report(ArgumentError.new("Oops"), handled: true)
+    end
+    assert_equal [], @subscriber.events
   end
 
   test "#handle swallow and report any unhandled error" do
@@ -46,7 +56,7 @@ class ErrorReporterTest < ActiveSupport::TestCase
     @reporter.handle do
       raise error
     end
-    assert_equal [[error, true, :warning, {}]], @subscriber.events
+    assert_equal [[error, true, :warning, "application", {}]], @subscriber.events
   end
 
   test "#handle can be scoped to an exception class" do
@@ -56,6 +66,23 @@ class ErrorReporterTest < ActiveSupport::TestCase
       end
     end
     assert_equal [], @subscriber.events
+  end
+
+  test "#handle can be scoped to several exception classes" do
+    assert_raises ArgumentError do
+      @reporter.handle(NameError, NoMethodError) do
+        raise ArgumentError
+      end
+    end
+    assert_equal [], @subscriber.events
+  end
+
+  test "#handle swallows and reports matching errors" do
+    error = ArgumentError.new("Oops")
+    @reporter.handle(NameError, ArgumentError) do
+      raise error
+    end
+    assert_equal [[error, true, :warning, "application", {}]], @subscriber.events
   end
 
   test "#handle passes through the return value" do
@@ -103,7 +130,7 @@ class ErrorReporterTest < ActiveSupport::TestCase
         raise error
       end
     end
-    assert_equal [[error, false, :error, {}]], @subscriber.events
+    assert_equal [[error, false, :error, "application", {}]], @subscriber.events
   end
 
   test "#record can be scoped to an exception class" do
@@ -113,6 +140,25 @@ class ErrorReporterTest < ActiveSupport::TestCase
       end
     end
     assert_equal [], @subscriber.events
+  end
+
+  test "#record can be scoped to several exception classes" do
+    assert_raises ArgumentError do
+      @reporter.record(NameError, NoMethodError) do
+        raise ArgumentError
+      end
+    end
+    assert_equal [], @subscriber.events
+  end
+
+  test "#record report any matching, unhandled error and re-raise them" do
+    error = ArgumentError.new("Oops")
+    assert_raises ArgumentError do
+      @reporter.record(NameError, ArgumentError) do
+        raise error
+      end
+    end
+    assert_equal [[error, false, :error, "application", {}]], @subscriber.events
   end
 
   test "#record passes through the return value" do
@@ -133,6 +179,31 @@ class ErrorReporterTest < ActiveSupport::TestCase
     assert_equal 1, second_subscriber.events.size
   end
 
+  test "can unsubscribe" do
+    second_subscriber = ErrorSubscriber.new
+    @reporter.subscribe(second_subscriber)
+
+    error = ArgumentError.new("Oops")
+    @reporter.report(error, handled: true)
+
+    @reporter.unsubscribe(second_subscriber)
+
+    error = ArgumentError.new("Oops 2")
+    @reporter.report(error, handled: true)
+
+    assert_equal 2, @subscriber.events.size
+    assert_equal 1, second_subscriber.events.size
+
+    @reporter.subscribe(second_subscriber)
+    @reporter.unsubscribe(ErrorSubscriber)
+
+    error = ArgumentError.new("Oops 3")
+    @reporter.report(error, handled: true)
+
+    assert_equal 2, @subscriber.events.size
+    assert_equal 1, second_subscriber.events.size
+  end
+
   test "handled errors default to :warning severity" do
     @reporter.report(@error, handled: true)
     assert_equal :warning, @subscriber.events.dig(0, 2)
@@ -143,6 +214,24 @@ class ErrorReporterTest < ActiveSupport::TestCase
     assert_equal :error, @subscriber.events.dig(0, 2)
   end
 
+  test "report errors only once" do
+    assert_difference -> { @subscriber.events.size }, +1 do
+      @reporter.report(@error, handled: false)
+    end
+
+    assert_no_difference -> { @subscriber.events.size } do
+      3.times do
+        @reporter.report(@error, handled: false)
+      end
+    end
+  end
+
+  test "can report frozen exceptions" do
+    assert_difference -> { @subscriber.events.size }, +1 do
+      @reporter.report(@error.freeze, handled: false)
+    end
+  end
+
   class FailingErrorSubscriber
     Error = Class.new(StandardError)
 
@@ -150,7 +239,7 @@ class ErrorReporterTest < ActiveSupport::TestCase
       @error = error
     end
 
-    def report(_error, handled:, severity:, context:)
+    def report(_error, handled:, severity:, context:, source:)
       raise @error
     end
   end

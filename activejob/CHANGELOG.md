@@ -1,84 +1,116 @@
-*   Remove deprecated `:return_false_on_aborted_enqueue` option.
+*   Don't double log the `job` when using `ActiveRecord::QueryLog`
 
-    *Rafael Mendonça França*
+    Previously if you set `config.active_record.query_log_tags` to an array that included
+    `:job`, the job name would get logged twice. This bug has been fixed.
 
-*   Deprecated `Rails.config.active_job.skip_after_callbacks_if_terminated`.
+    *Alex Ghiculescu*
 
-    *Rafael Mendonça França*
+*   Add support for Sidekiq's transaction-aware client
 
-*   Removed deprecated behavior that was not halting `after_enqueue`/`after_perform` callbacks when a
-    previous callback was halted with `throw :abort`.
+    *Jonathan del Strother*
 
-    *Rafael Mendonça França*
+*   Remove QueAdapter from Active Job.
 
-*   Raise an `SerializationError` in `Serializer::ModuleSerializer`
-    if the module name is not present.
+    After maintaining Active Job QueAdapter by Rails and Que side
+    to support Ruby 3 keyword arguments and options provided as top level keywords,
+    it is quite difficult to maintain it this way.
 
-    *Veerpal Brar*
+    Active Job Que adapter can be included in the future version of que gem itself.
 
+    *Yasuo Honda*
 
-## Rails 7.0.0.alpha2 (September 15, 2021) ##
+*   Fix BigDecimal (de)serialization for adapters using JSON.
 
-*   No changes.
+    Previously, BigDecimal was listed as not needing a serializer.  However,
+    when used with an adapter storing the job arguments as JSON, it would get
+    serialized as a simple String, resulting in deserialization also producing
+    a String (instead of a BigDecimal).
 
+    By using a serializer, we ensure the round trip is safe.
 
-## Rails 7.0.0.alpha1 (September 15, 2021) ##
+    To ensure applications using BigDecimal job arguments are not subject to
+    race conditions during deployment (where a replica running a version of
+    Rails without BigDecimalSerializer fails to deserialize an argument
+    serialized with it), `ActiveJob.use_big_decimal_serializer` is disabled by
+    default, and can be set to true in a following deployment..
 
-*   Allow a job to retry indefinitely
+    *Sam Bostock*
 
-    The `attempts` parameter of the `retry_on` method now accepts the
-    symbol reference `:unlimited` in addition to a specific number of retry
-    attempts to allow a developer to specify that a job should retry
-    forever until it succeeds.
+*   Preserve full-precision `enqueued_at` timestamps for serialized jobs,
+    allowing more accurate reporting of how long a job spent waiting in the
+    queue before it was performed.
 
-        class MyJob < ActiveJob::Base
-          retry_on(AlwaysRetryException, attempts: :unlimited)
+    Retains IS08601 format compatibility.
 
-          # the actual job code
-        end
+    *Jeremy Daer*
 
-    *Daniel Morton*
+*   Add `--parent` option to job generator to specify parent class of job.
 
-*   Added possibility to check on `:priority` in test helper methods
-    `assert_enqueued_with` and `assert_performed_with`.
+    Example:
 
-    *Wojciech Wnętrzak*
+    `bin/rails g job process_payment --parent=payment_job` generates:
 
-*   OpenSSL constants are now used for Digest computations.
+    ```ruby
+    class ProcessPaymentJob < PaymentJob
+      # ...
+    end
+    ```
 
-    *Dirkjan Bussink*
+    *Gannon McGibbon*
 
-*   Add a Serializer for the Range class.
+*   Add more detailed description to job generator.
 
-    This should allow things like `MyJob.perform_later(range: 1..100)`.
+    *Gannon McGibbon*
 
-*   Communicate enqueue failures to callers of `perform_later`.
+*   `perform.active_job` notification payloads now include `:db_runtime`, which
+    is the total time (in ms) taken by database queries while performing a job.
+    This value can be used to better understand how a job's time is spent.
 
-    `perform_later` can now optionally take a block which will execute after
-    the adapter attempts to enqueue the job. The block will receive the job
-    instance as an argument even if the enqueue was not successful.
-    Additionally, `ActiveJob` adapters now have the ability to raise an
-    `ActiveJob::EnqueueError` which will be caught and stored in the job
-    instance so code attempting to enqueue jobs can inspect any raised
-    `EnqueueError` using the block.
+    *Jonathan Hefner*
 
-        MyJob.perform_later do |job|
-          unless job.successfully_enqueued?
-            if job.enqueue_error&.message == "Redis was unavailable"
-              # invoke some code that will retry the job after a delay
-            end
-          end
-        end
+*   Update `ActiveJob::QueueAdapters::QueAdapter` to remove deprecation warning.
 
-    *Daniel Morton*
+    Remove a deprecation warning introduced in que 1.2 to prepare for changes in
+    que 2.0 necessary for Ruby 3 compatibility.
 
-*   Don't log rescuable exceptions defined with `rescue_from`.
+    *Damir Zekic* and *Adis Hasovic*
 
-    *Hu Hailin*
+*   Add missing `bigdecimal` require in `ActiveJob::Arguments`
 
-*   Allow `rescue_from` to rescue all exceptions.
+    Could cause `uninitialized constant ActiveJob::Arguments::BigDecimal (NameError)`
+    when loading Active Job in isolation.
 
-    *Adrianna Chang*, *Étienne Barrié*
+    *Jean Boussier*
 
+*   Allow testing `discard_on/retry_on ActiveJob::DeserializationError`
 
-Please check [6-1-stable](https://github.com/rails/rails/blob/6-1-stable/activejob/CHANGELOG.md) for previous changes.
+    Previously in `perform_enqueued_jobs`, `deserialize_arguments_if_needed`
+    was called before calling `perform_now`. When a record no longer exists
+    and is serialized using GlobalID this led to raising
+    an `ActiveJob::DeserializationError` before reaching `perform_now` call.
+    This behavior makes difficult testing the job `discard_on/retry_on` logic.
+
+    Now `deserialize_arguments_if_needed` call is postponed to when `perform_now`
+    is called.
+
+    Example:
+
+    ```ruby
+    class UpdateUserJob < ActiveJob::Base
+      discard_on ActiveJob::DeserializationError
+
+      def perform(user)
+        # ...
+      end
+    end
+
+    # In the test
+    User.destroy_all
+    assert_nothing_raised do
+      perform_enqueued_jobs only: UpdateUserJob
+    end
+    ```
+
+    *Jacopo Beschi*
+
+Please check [7-0-stable](https://github.com/rails/rails/blob/7-0-stable/activejob/CHANGELOG.md) for previous changes.

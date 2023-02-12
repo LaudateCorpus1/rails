@@ -80,6 +80,23 @@ class DefaultScopingTest < ActiveRecord::TestCase
     assert_equal 50000,   wheres["salary"]
   end
 
+  def test_combined_default_scope_without_and_with_all_queries_works
+    Mentor.create!
+    klass = DeveloperWithIncludedMentorDefaultScopeNotAllQueriesAndDefaultScopeFirmWithAllQueries
+
+    create_sql = capture_sql { klass.create!(name: "Steve") }.first
+
+    assert_match(/mentor_id/, create_sql)
+    assert_match(/firm_id/, create_sql)
+
+    developer = klass.find_by!(name: "Steve")
+
+    update_sql = capture_sql { developer.update(name: "Stephen") }.first
+
+    assert_no_match(/mentor_id/, update_sql)
+    assert_match(/firm_id/, update_sql)
+  end
+
   def test_default_scope_runs_on_create
     Mentor.create!
     create_sql = capture_sql { DeveloperwithDefaultMentorScopeNot.create!(name: "Eileen") }.first
@@ -95,7 +112,7 @@ class DefaultScopingTest < ActiveRecord::TestCase
   end
 
   def test_nilable_default_scope_with_all_queries_runs_on_create
-    create_sql = capture_sql { DeveloperWithDefaultNilableMentorScopeAllQueries.create!(name: "Nikita") }.first
+    create_sql = capture_sql { DeveloperWithDefaultNilableFirmScopeAllQueries.create!(name: "Nikita") }.first
 
     assert_no_match(/AND$/, create_sql)
   end
@@ -117,8 +134,8 @@ class DefaultScopingTest < ActiveRecord::TestCase
   end
 
   def test_nilable_default_scope_with_all_queries_runs_on_select
-    DeveloperWithDefaultNilableMentorScopeAllQueries.create!(name: "Nikita")
-    select_sql = capture_sql { DeveloperWithDefaultNilableMentorScopeAllQueries.find_by(name: "Nikita") }.first
+    DeveloperWithDefaultNilableFirmScopeAllQueries.create!(name: "Nikita")
+    select_sql = capture_sql { DeveloperWithDefaultNilableFirmScopeAllQueries.find_by(name: "Nikita") }.first
 
     assert_no_match(/AND$/, select_sql)
   end
@@ -140,7 +157,7 @@ class DefaultScopingTest < ActiveRecord::TestCase
   end
 
   def test_nilable_default_scope_with_all_queries_runs_on_update
-    dev = DeveloperWithDefaultNilableMentorScopeAllQueries.create!(name: "Nikita")
+    dev = DeveloperWithDefaultNilableFirmScopeAllQueries.create!(name: "Nikita")
     update_sql = capture_sql { dev.update!(name: "Not Nikita") }.first
 
     assert_no_match(/AND$/, update_sql)
@@ -163,7 +180,7 @@ class DefaultScopingTest < ActiveRecord::TestCase
   end
 
   def test_nilable_default_scope_with_all_queries_runs_on_update_columns
-    dev = DeveloperWithDefaultNilableMentorScopeAllQueries.create!(name: "Nikita")
+    dev = DeveloperWithDefaultNilableFirmScopeAllQueries.create!(name: "Nikita")
     update_sql = capture_sql { dev.update_columns(name: "Not Nikita") }.first
 
     assert_no_match(/AND$/, update_sql)
@@ -186,7 +203,7 @@ class DefaultScopingTest < ActiveRecord::TestCase
   end
 
   def test_nilable_default_scope_with_all_queries_runs_on_destroy
-    dev = DeveloperWithDefaultNilableMentorScopeAllQueries.create!(name: "Nikita")
+    dev = DeveloperWithDefaultNilableFirmScopeAllQueries.create!(name: "Nikita")
     destroy_sql = capture_sql { dev.destroy }.first
 
     assert_no_match(/AND$/, destroy_sql)
@@ -208,8 +225,17 @@ class DefaultScopingTest < ActiveRecord::TestCase
     assert_match(/mentor_id/, reload_sql)
   end
 
+  def test_default_scope_with_all_queries_runs_on_reload_but_default_scope_without_all_queries_does_not
+    Mentor.create!
+    dev = DeveloperWithIncludedMentorDefaultScopeNotAllQueriesAndDefaultScopeFirmWithAllQueries.create!(name: "Eileen")
+    reload_sql = capture_sql { dev.reload }.first
+
+    assert_no_match(/mentor_id/, reload_sql)
+    assert_match(/firm_id/, reload_sql)
+  end
+
   def test_nilable_default_scope_with_all_queries_runs_on_reload
-    dev = DeveloperWithDefaultNilableMentorScopeAllQueries.create!(name: "Nikita")
+    dev = DeveloperWithDefaultNilableFirmScopeAllQueries.create!(name: "Nikita")
     reload_sql = capture_sql { dev.reload }.first
 
     assert_no_match(/AND$/, reload_sql)
@@ -383,6 +409,20 @@ class DefaultScopingTest < ActiveRecord::TestCase
     expected = Developer.all.collect(&:name)
     received = Developer.includes(:projects).select(:id).unscope(:includes, :select).collect(&:name)
     assert_equal expected, received
+  end
+
+  def test_unscope_eager_load
+    expected = Developer.all.collect(&:name)
+    received = Developer.eager_load(:projects).select(:id).unscope(:eager_load, :select)
+    assert_equal expected, received.collect(&:name)
+    assert_equal false, received.first.projects.loaded?
+  end
+
+  def test_unscope_preloads
+    expected = Developer.all.collect(&:name)
+    received = Developer.preload(:projects).select(:id).unscope(:preload, :select)
+    assert_equal expected, received.collect(&:name)
+    assert_equal false, received.first.projects.loaded?
   end
 
   def test_unscope_having
@@ -674,39 +714,41 @@ class DefaultScopingTest < ActiveRecord::TestCase
 end
 
 class DefaultScopingWithThreadTest < ActiveRecord::TestCase
-  self.use_transactional_tests = false
+  unless in_memory_db?
+    self.use_transactional_tests = false
 
-  def test_default_scoping_with_threads
-    2.times do
-      Thread.new {
-        assert_includes DeveloperOrderedBySalary.all.to_sql, "salary DESC"
-        DeveloperOrderedBySalary.connection.close
-      }.join
+    def test_default_scoping_with_threads
+      2.times do
+        Thread.new {
+          assert_includes DeveloperOrderedBySalary.all.to_sql, "salary DESC"
+          DeveloperOrderedBySalary.connection.close
+        }.join
+      end
+    end
+
+    def test_default_scope_is_threadsafe
+      2.times { ThreadsafeDeveloper.unscoped.create! }
+
+      threads = []
+      assert_not_equal 1, ThreadsafeDeveloper.unscoped.count
+
+      barrier_1 = Concurrent::CyclicBarrier.new(2)
+      barrier_2 = Concurrent::CyclicBarrier.new(2)
+
+      threads << Thread.new do
+        Thread.current[:default_scope_delay] = -> { barrier_1.wait; barrier_2.wait }
+        assert_equal 1, ThreadsafeDeveloper.all.to_a.count
+        ThreadsafeDeveloper.connection.close
+      end
+      threads << Thread.new do
+        Thread.current[:default_scope_delay] = -> { barrier_2.wait }
+        barrier_1.wait
+        assert_equal 1, ThreadsafeDeveloper.all.to_a.count
+        ThreadsafeDeveloper.connection.close
+      end
+      threads.each(&:join)
+    ensure
+      ThreadsafeDeveloper.unscoped.destroy_all
     end
   end
-
-  def test_default_scope_is_threadsafe
-    2.times { ThreadsafeDeveloper.unscoped.create! }
-
-    threads = []
-    assert_not_equal 1, ThreadsafeDeveloper.unscoped.count
-
-    barrier_1 = Concurrent::CyclicBarrier.new(2)
-    barrier_2 = Concurrent::CyclicBarrier.new(2)
-
-    threads << Thread.new do
-      Thread.current[:default_scope_delay] = -> { barrier_1.wait; barrier_2.wait }
-      assert_equal 1, ThreadsafeDeveloper.all.to_a.count
-      ThreadsafeDeveloper.connection.close
-    end
-    threads << Thread.new do
-      Thread.current[:default_scope_delay] = -> { barrier_2.wait }
-      barrier_1.wait
-      assert_equal 1, ThreadsafeDeveloper.all.to_a.count
-      ThreadsafeDeveloper.connection.close
-    end
-    threads.each(&:join)
-  ensure
-    ThreadsafeDeveloper.unscoped.destroy_all
-  end
-end unless in_memory_db?
+end

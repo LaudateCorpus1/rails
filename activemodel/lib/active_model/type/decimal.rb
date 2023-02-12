@@ -4,7 +4,43 @@ require "bigdecimal/util"
 
 module ActiveModel
   module Type
-    class Decimal < Value # :nodoc:
+    # Attribute type for decimal, high-precision floating point numeric
+    # representation. It is registered under the +:decimal+ key.
+    #
+    #   class BagOfCoffee
+    #     include ActiveModel::Attributes
+    #
+    #     attribute :weight, :decimal
+    #   end
+    #
+    # Numeric instances are converted to BigDecimal instances. Any other objects
+    # are cast using their +to_d+ method, except for blank strings, which are
+    # cast to +nil+. If a +to_d+ method is not defined, the object is converted
+    # to a string using +to_s+, which is then cast using +to_d+.
+    #
+    #   bag = BagOfCoffee.new
+    #
+    #   bag.weight = 0.01
+    #   bag.weight # => 0.1e-1
+    #
+    #   bag.weight = "0.01"
+    #   bag.weight # => 0.1e-1
+    #
+    #   bag.weight = ""
+    #   bag.weight # => nil
+    #
+    #   bag.weight = :arbitrary
+    #   bag.weight # => nil (the result of `.to_s.to_d`)
+    #
+    # Decimal precision defaults to 18, and can be customized when declaring an
+    # attribute:
+    #
+    #   class BagOfCoffee
+    #     include ActiveModel::Attributes
+    #
+    #     attribute :weight, :decimal, precision: 24
+    #   end
+    class Decimal < Value
       include Helpers::Numeric
       BIGDECIMAL_PRECISION = 18
 

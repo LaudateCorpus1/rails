@@ -45,7 +45,7 @@ The Executor consists of two callbacks: `to_run` and `to_complete`. The Run
 callback is called before the application code, and the Complete callback is
 called after.
 
-### Default callbacks
+### Default Callbacks
 
 In a default Rails application, the Executor callbacks are used to:
 
@@ -60,7 +60,7 @@ directly wrapping code with methods like
 `ActiveRecord::Base.connection_pool.with_connection`. The Executor replaces
 these with a single more abstract interface.
 
-### Wrapping application code
+### Wrapping Application Code
 
 If you're writing a library or component that will invoke application code, you
 should wrap it with a call to the executor:
@@ -200,18 +200,19 @@ additional threads.
 
 ### Configuration
 
-The Reloader only checks for file changes when `cache_classes` is false and
-`reload_classes_only_on_change` is true (which is the default in the
-`development` environment).
+The Reloader only checks for file changes when `config.enable_reloading` is
+`true` and so is `config.reload_classes_only_on_change`. These are the defaults in the
+`development` environment.
 
-When `cache_classes` is true (in `production`, by default), the Reloader is only
-a pass-through to the Executor.
+When `config.enable_reloading` is `false` (in `production`, by default), the
+Reloader is only a pass-through to the Executor.
 
 The Executor always has important work to do, like database connection
-management. When `cache_classes` and `eager_load` are both true (`production`),
-no autoloading or class reloading will occur, so it does not need the Load
-Interlock. If either of those are false (`development`), then the Executor will
-use the Load Interlock to ensure constants are only loaded when it is safe.
+management. When `config.enable_reloading` is `false` and `config.eager_load` is
+`true` (`production` defaults), no reloading will occur, so it does not need the
+Load Interlock. With the default settings in the `development` environment, the
+Executor will use the Load Interlock to ensure constants are only loaded when it
+is safe.
 
 Load Interlock
 --------------

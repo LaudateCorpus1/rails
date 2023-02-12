@@ -1,7 +1,5 @@
 # frozen_string_literal: true
 
-require "active_support/core_ext/object/blank"
-
 module ActiveRecord
   module ConnectionAdapters
     module PostgreSQL
@@ -42,11 +40,13 @@ module ActiveRecord
 
         def init_with(coder)
           @serial = coder["serial"]
+          @generated = coder["generated"]
           super
         end
 
         def encode_with(coder)
           coder["serial"] = @serial
+          coder["generated"] = @generated
           super
         end
 

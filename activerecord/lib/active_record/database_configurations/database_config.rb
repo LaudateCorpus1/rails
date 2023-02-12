@@ -8,20 +8,17 @@ module ActiveRecord
     class DatabaseConfig # :nodoc:
       attr_reader :env_name, :name
 
-      attr_accessor :owner_name
-
       def initialize(env_name, name)
         @env_name = env_name
         @name = name
       end
 
-      def spec_name
-        @name
-      end
-      deprecate spec_name: "please use name instead"
-
       def adapter_method
         "#{adapter}_connection"
+      end
+
+      def adapter_class_method
+        "#{adapter}_adapter_class"
       end
 
       def host

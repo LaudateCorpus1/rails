@@ -6,12 +6,27 @@ require "active_support/i18n_railtie"
 module ActiveSupport
   class Railtie < Rails::Railtie # :nodoc:
     config.active_support = ActiveSupport::OrderedOptions.new
+    config.active_support.disable_to_s_conversion = false
 
     config.eager_load_namespaces << ActiveSupport
 
+    initializer "active_support.deprecator", before: :load_environment_config do |app|
+      app.deprecators[:active_support] = ActiveSupport.deprecator
+    end
+
     initializer "active_support.isolation_level" do |app|
-      if level = app.config.active_support.delete(:isolation_level)
-        ActiveSupport::IsolatedExecutionState.isolation_level = level
+      config.after_initialize do
+        if level = app.config.active_support.delete(:isolation_level)
+          ActiveSupport::IsolatedExecutionState.isolation_level = level
+        end
+      end
+    end
+
+    initializer "active_support.raise_on_invalid_cache_expiration_time" do |app|
+      config.after_initialize do
+        if app.config.active_support.raise_on_invalid_cache_expiration_time
+          ActiveSupport::Cache::Store.raise_on_invalid_cache_expiration_time = true
+        end
       end
     end
 
@@ -40,14 +55,12 @@ module ActiveSupport
     end
 
     initializer "active_support.reset_all_current_attributes_instances" do |app|
-      executor_around_test_case = app.config.active_support.executor_around_test_case
-
       app.reloader.before_class_unload { ActiveSupport::CurrentAttributes.clear_all }
       app.executor.to_run              { ActiveSupport::CurrentAttributes.reset_all }
       app.executor.to_complete         { ActiveSupport::CurrentAttributes.reset_all }
 
       ActiveSupport.on_load(:active_support_test_case) do
-        if executor_around_test_case
+        if app.config.active_support.executor_around_test_case
           require "active_support/executor/test_helper"
           include ActiveSupport::Executor::TestHelper
         else
@@ -62,20 +75,20 @@ module ActiveSupport
 
     initializer "active_support.deprecation_behavior" do |app|
       if app.config.active_support.report_deprecations == false
-        ActiveSupport::Deprecation.silenced = true
-        ActiveSupport::Deprecation.behavior = :silence
-        ActiveSupport::Deprecation.disallowed_behavior = :silence
+        app.deprecators.silenced = true
+        app.deprecators.behavior = :silence
+        app.deprecators.disallowed_behavior = :silence
       else
         if deprecation = app.config.active_support.deprecation
-          ActiveSupport::Deprecation.behavior = deprecation
+          app.deprecators.behavior = deprecation
         end
 
         if disallowed_deprecation = app.config.active_support.disallowed_deprecation
-          ActiveSupport::Deprecation.disallowed_behavior = disallowed_deprecation
+          app.deprecators.disallowed_behavior = disallowed_deprecation
         end
 
         if disallowed_warnings = app.config.active_support.disallowed_deprecation_warnings
-          ActiveSupport::Deprecation.disallowed_warnings = disallowed_warnings
+          app.deprecators.disallowed_warnings = disallowed_warnings
         end
       end
     end
@@ -112,10 +125,6 @@ module ActiveSupport
       end
     end
 
-    initializer "active_support.set_error_reporter" do |app|
-      ActiveSupport.error_reporter = app.executor.error_reporter
-    end
-
     initializer "active_support.set_configs" do |app|
       app.config.active_support.each do |k, v|
         k = "#{k}="
@@ -145,6 +154,49 @@ module ActiveSupport
           require "active_support/core_ext/digest"
           ::Digest::UUID.use_rfc4122_namespaced_uuids = app.config.active_support.use_rfc4122_namespaced_uuids
         end
+      end
+    end
+
+    initializer "active_support.set_fallback_to_marshal_deserialization" do |app|
+      config.after_initialize do
+        unless app.config.active_support.fallback_to_marshal_deserialization.nil?
+          ActiveSupport::JsonWithMarshalFallback.fallback_to_marshal_deserialization =
+            app.config.active_support.fallback_to_marshal_deserialization
+        end
+      end
+    end
+
+    initializer "active_support.set_default_message_encryptor_serializer" do |app|
+      config.after_initialize do
+        unless app.config.active_support.default_message_encryptor_serializer.nil?
+          ActiveSupport::MessageEncryptor.default_message_encryptor_serializer =
+            app.config.active_support.default_message_encryptor_serializer
+        end
+      end
+    end
+
+    initializer "active_support.set_default_message_verifier_serializer" do |app|
+      config.after_initialize do
+        unless app.config.active_support.default_message_verifier_serializer.nil?
+          ActiveSupport::MessageVerifier.default_message_verifier_serializer =
+            app.config.active_support.default_message_verifier_serializer
+        end
+      end
+    end
+
+    initializer "active_support.set_marshal_serialization" do |app|
+      config.after_initialize do
+        unless app.config.active_support.use_marshal_serialization.nil?
+          ActiveSupport::JsonWithMarshalFallback.use_marshal_serialization =
+            app.config.active_support.use_marshal_serialization
+        end
+      end
+    end
+
+    initializer "active_support.set_use_message_serializer_for_metadata" do |app|
+      config.after_initialize do
+        ActiveSupport::Messages::Metadata.use_message_serializer_for_metadata =
+          app.config.active_support.use_message_serializer_for_metadata
       end
     end
   end

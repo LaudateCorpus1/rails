@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "action_dispatch"
+require "action_dispatch/log_subscriber"
 require "active_support/messages/rotation_configuration"
 
 module ActionDispatch
@@ -39,6 +40,10 @@ module ActionDispatch
     config.action_dispatch.cookies_rotations = ActiveSupport::Messages::RotationConfiguration.new
 
     config.eager_load_namespaces << ActionDispatch
+
+    initializer "action_dispatch.deprecator", before: :load_environment_config do |app|
+      app.deprecators[:action_dispatch] = ActionDispatch.deprecator
+    end
 
     initializer "action_dispatch.configure" do |app|
       ActionDispatch::Http::URL.secure_protocol = app.config.force_ssl

@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 #--
-# Copyright (c) 2004-2021 David Heinemeier Hansson
+# Copyright (c) 2004-2022 David Heinemeier Hansson
 #
 # Permission is hereby granted, free of charge, to any person obtaining
 # a copy of this software and associated documentation files (the
@@ -30,6 +30,7 @@ require "arel"
 require "yaml"
 
 require "active_record/version"
+require "active_record/deprecator"
 require "active_model/attribute_set"
 require "active_record/errors"
 
@@ -50,15 +51,17 @@ module ActiveRecord
   autoload :Inheritance
   autoload :Integration
   autoload :InternalMetadata
+  autoload :LogSubscriber
   autoload :Migration
   autoload :Migrator, "active_record/migration"
   autoload :ModelSchema
   autoload :NestedAttributes
   autoload :NoTouching
+  autoload :Normalization
   autoload :Persistence
   autoload :QueryCache
-  autoload :Querying
   autoload :QueryLogs
+  autoload :Querying
   autoload :ReadonlyAttributes
   autoload :RecordInvalid, "active_record/validations"
   autoload :Reflection
@@ -68,6 +71,7 @@ module ActiveRecord
   autoload :SchemaDumper
   autoload :SchemaMigration
   autoload :Scoping
+  autoload :SecurePassword
   autoload :SecureToken
   autoload :Serialization
   autoload :SignedId
@@ -76,6 +80,7 @@ module ActiveRecord
   autoload :TestDatabases
   autoload :TestFixtures, "active_record/fixtures"
   autoload :Timestamp
+  autoload :TokenFor
   autoload :TouchLater
   autoload :Transactions
   autoload :Translation
@@ -94,6 +99,7 @@ module ActiveRecord
     autoload :FutureResult
     autoload :LegacyYamlAdapter
     autoload :NullRelation
+    autoload :Promise
     autoload :Relation
     autoload :Result
     autoload :StatementCache
@@ -101,13 +107,13 @@ module ActiveRecord
     autoload :Type
 
     autoload_under "relation" do
-      autoload :QueryMethods
-      autoload :FinderMethods
-      autoload :Calculations
-      autoload :PredicateBuilder
-      autoload :SpawnMethods
       autoload :Batches
+      autoload :Calculations
       autoload :Delegation
+      autoload :FinderMethods
+      autoload :PredicateBuilder
+      autoload :QueryMethods
+      autoload :SpawnMethods
     end
   end
 
@@ -177,9 +183,6 @@ module ActiveRecord
   singleton_class.attr_accessor :schema_cache_ignored_tables
   self.schema_cache_ignored_tables = []
 
-  singleton_class.attr_accessor :legacy_connection_handling
-  self.legacy_connection_handling = true
-
   singleton_class.attr_reader :default_timezone
 
   # Determines whether to use Time.utc (using :utc) or Time.local (using :local) when pulling
@@ -194,11 +197,52 @@ module ActiveRecord
 
   self.default_timezone = :utc
 
+  # The action to take when database query produces warning.
+  # Must be one of :ignore, :log, :raise, :report, or a custom proc.
+  # The default is :ignore.
+  singleton_class.attr_reader :db_warnings_action
+
+  def self.db_warnings_action=(action)
+    @db_warnings_action =
+      case action
+      when :ignore
+        nil
+      when :log
+        ->(warning) do
+          warning_message = "[#{warning.class}] #{warning.message}"
+          warning_message += " (#{warning.code})" if warning.code
+          ActiveRecord::Base.logger.warn(warning_message)
+        end
+      when :raise
+        ->(warning) { raise warning }
+      when :report
+        ->(warning) { Rails.error.report(warning, handled: true) }
+      when Proc
+        action
+      else
+        raise ArgumentError, "db_warnings_action must be one of :ignore, :log, :raise, :report, or a custom proc."
+      end
+  end
+
+  self.db_warnings_action = :ignore
+
+  # Specify allowlist of database warnings.
+  singleton_class.attr_accessor :db_warnings_ignore
+  self.db_warnings_ignore = []
+
   singleton_class.attr_accessor :writing_role
   self.writing_role = :writing
 
   singleton_class.attr_accessor :reading_role
   self.reading_role = :reading
+
+  def self.legacy_connection_handling=(_)
+    raise ArgumentError, <<~MSG.squish
+      The `legacy_connection_handling` setter was deprecated in 7.0 and removed in 7.1,
+      but is still defined in your configuration. Please remove this call as it no longer
+      has any effect."
+    MSG
+  end
 
   # Sets the async_query_executor for an application. By default the thread pool executor
   # set to +nil+ which will not run queries in the background. Applications must configure
@@ -258,6 +302,15 @@ module ActiveRecord
   singleton_class.attr_accessor :maintain_test_schema
   self.maintain_test_schema = nil
 
+  singleton_class.attr_accessor :raise_on_assign_to_attr_readonly
+  self.raise_on_assign_to_attr_readonly = false
+
+  singleton_class.attr_accessor :belongs_to_required_validates_foreign_key
+  self.belongs_to_required_validates_foreign_key = true
+
+  singleton_class.attr_accessor :before_committed_on_all_records
+  self.before_committed_on_all_records = false
+
   ##
   # :singleton-method:
   # Specify a threshold for the size of query result sets. If the number of
@@ -304,6 +357,12 @@ module ActiveRecord
 
   ##
   # :singleton-method:
+  # Specify strategy to use for executing migrations.
+  singleton_class.attr_accessor :migration_strategy
+  self.migration_strategy = Migration::DefaultStrategy
+
+  ##
+  # :singleton-method:
   # Specify whether schema dump should happen at the end of the
   # bin/rails db:migrate command. This is true by default, which is useful for the
   # development environment. This should ideally be false in the production
@@ -321,12 +380,19 @@ module ActiveRecord
   singleton_class.attr_accessor :dump_schemas
   self.dump_schemas = :schema_search_path
 
-  ##
-  # :singleton-method:
-  # Show a warning when Rails couldn't parse your database.yml
-  # for multiple databases.
-  singleton_class.attr_accessor :suppress_multiple_database_warning
-  self.suppress_multiple_database_warning = false
+  def self.suppress_multiple_database_warning
+    ActiveRecord.deprecator.warn(<<-MSG.squish)
+      config.active_record.suppress_multiple_database_warning is deprecated and will be removed in Rails 7.2.
+      It no longer has any effect and should be removed from the configuration file.
+    MSG
+  end
+
+  def self.suppress_multiple_database_warning=(value)
+    ActiveRecord.deprecator.warn(<<-MSG.squish)
+      config.active_record.suppress_multiple_database_warning= is deprecated and will be removed in Rails 7.2.
+      It no longer has any effect and should be removed from the configuration file.
+    MSG
+  end
 
   ##
   # :singleton-method:
@@ -337,8 +403,37 @@ module ActiveRecord
   singleton_class.attr_accessor :verify_foreign_keys_for_fixtures
   self.verify_foreign_keys_for_fixtures = false
 
+  ##
+  # :singleton-method:
+  # If true, Rails will continue allowing plural association names in where clauses on singular associations
+  # This behavior will be removed in Rails 7.2.
+  singleton_class.attr_accessor :allow_deprecated_singular_associations_name
+  self.allow_deprecated_singular_associations_name = true
+
   singleton_class.attr_accessor :query_transformers
   self.query_transformers = []
+
+  ##
+  # :singleton-method:
+  # Application configurable boolean that instructs the YAML Coder to use
+  # an unsafe load if set to true.
+  singleton_class.attr_accessor :use_yaml_unsafe_load
+  self.use_yaml_unsafe_load = false
+
+  ##
+  # :singleton-method:
+  # Application configurable boolean that denotes whether or not to raise
+  # an exception when the PostgreSQLAdapter is provided with an integer that
+  # is wider than signed 64bit representation
+  singleton_class.attr_accessor :raise_int_wider_than_64bit
+  self.raise_int_wider_than_64bit = true
+
+  ##
+  # :singleton-method:
+  # Application configurable array that provides additional permitted classes
+  # to Psych safe_load in the YAML Coder
+  singleton_class.attr_accessor :yaml_column_permitted_classes
+  self.yaml_column_permitted_classes = [Symbol]
 
   def self.eager_load!
     super

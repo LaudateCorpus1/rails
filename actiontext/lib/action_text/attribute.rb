@@ -26,11 +26,15 @@ module ActionText
       #   Message.all.with_rich_text_content_and_embeds # Avoids N+1 queries when you just want the body and attachments.
       #   Message.all.with_all_rich_text # Loads all rich text associations.
       #
-      #  === Options
+      # ==== Options
       #
-      #  * <tt>:encrypted</tt> - Pass true to encrypt the rich text attribute. The encryption will be non-deterministic. See
-      #  +ActiveRecord::Encryption::EncryptableRecord.encrypts+. Default: false.
-      def has_rich_text(name, encrypted: false)
+      # * <tt>:encrypted</tt> - Pass true to encrypt the rich text attribute. The encryption will be non-deterministic. See
+      #   +ActiveRecord::Encryption::EncryptableRecord.encrypts+. Default: false.
+      #
+      # * <tt>:strict_loading</tt> - Pass true to force strict loading. When
+      #   omitted, <tt>strict_loading:</tt> will be set to the value of the
+      #   <tt>strict_loading_by_default</tt> class attribute (false by default).
+      def has_rich_text(name, encrypted: false, strict_loading: strict_loading_by_default)
         class_eval <<-CODE, __FILE__, __LINE__ + 1
           def #{name}
             rich_text_#{name} || build_rich_text_#{name}
@@ -47,7 +51,8 @@ module ActionText
 
         rich_text_class_name = encrypted ? "ActionText::EncryptedRichText" : "ActionText::RichText"
         has_one :"rich_text_#{name}", -> { where(name: name) },
-          class_name: rich_text_class_name, as: :record, inverse_of: :record, autosave: true, dependent: :destroy
+          class_name: rich_text_class_name, as: :record, inverse_of: :record, autosave: true, dependent: :destroy,
+          strict_loading: strict_loading
 
         scope :"with_rich_text_#{name}", -> { includes("rich_text_#{name}") }
         scope :"with_rich_text_#{name}_and_embeds", -> { includes("rich_text_#{name}": { embeds_attachments: :blob }) }

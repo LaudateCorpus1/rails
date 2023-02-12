@@ -63,10 +63,10 @@ if ActiveRecord::Base.connection.prepared_statements
         assert_equal 1, Topic.find(1).id
         assert_raises(RecordNotFound) { SillyReply.find(2) }
 
-        topic_sql = cached_statement(Topic, Topic.primary_key)
+        topic_sql = cached_statement(Topic, [Topic.primary_key])
         assert_includes statement_cache, to_sql_key(topic_sql)
 
-        reply_sql = cached_statement(SillyReply, SillyReply.primary_key)
+        reply_sql = cached_statement(SillyReply, [SillyReply.primary_key])
         assert_includes statement_cache, to_sql_key(reply_sql)
 
         replies = SillyReply.where(id: 2).limit(1)
@@ -156,6 +156,11 @@ if ActiveRecord::Base.connection.prepared_statements
         assert_logs_binds(binds)
       end
 
+      def test_logs_unnamed_binds
+        binds = ["abcd"]
+        assert_logs_unnamed_binds(binds)
+      end
+
       def test_bind_params_to_sql_with_prepared_statements
         assert_bind_params_to_sql
       end
@@ -224,6 +229,20 @@ if ActiveRecord::Base.connection.prepared_statements
           authors = Author.where(id: [1, 2, 3, 9223372036854775808])
           assert_equal sql, @connection.to_sql(authors.arel)
           assert_sql(sql) { assert_equal 3, authors.length }
+
+          # prepared_statements: true
+          #
+          #   SELECT `authors`.* FROM `authors` WHERE `authors`.`id` IN (?, ?, ?)
+          #
+          # prepared_statements: false
+          #
+          #   SELECT `authors`.* FROM `authors` WHERE `authors`.`id` IN (1, 2, 3)
+          #
+          sql = "SELECT #{table}.* FROM #{table} WHERE #{pk} IN (#{bind_params(1..3)})"
+
+          arel_node = Arel.sql("SELECT #{table}.* FROM #{table} WHERE #{pk} IN (?)", [1, 2, 3])
+          assert_equal sql, @connection.to_sql(arel_node)
+          assert_sql(sql) { assert_equal 3, @connection.select_all(arel_node).length }
         end
 
         def bind_params(ids)
@@ -281,20 +300,20 @@ if ActiveRecord::Base.connection.prepared_statements
           assert_match %r(\[\["id", 10\]\]\z), logger.debugs.first
         end
 
-        def assert_filtered_log_binds(binds)
+        def assert_logs_unnamed_binds(binds)
           payload = {
-              name: "SQL",
-              sql: "select * from users where auth_token = ?",
-              binds: binds,
-              type_casted_binds: @connection.send(:type_casted_binds, binds)
+            name: "SQL",
+            sql: "select * from topics where title = $1",
+            binds: binds,
+            type_casted_binds: @connection.send(:type_casted_binds, binds)
           }
 
           event = ActiveSupport::Notifications::Event.new(
-              "foo",
-              Time.now,
-              Time.now,
-              123,
-              payload)
+            "foo",
+            Time.now,
+            Time.now,
+            123,
+            payload)
 
           logger = Class.new(ActiveRecord::LogSubscriber) {
             attr_reader :debugs
@@ -310,7 +329,39 @@ if ActiveRecord::Base.connection.prepared_statements
           }.new
 
           logger.sql(event)
-          assert_match %r([[auth_token, [FILTERED]]]), logger.debugs.first
+          assert_match %r(\[\[nil, "abcd"\]\]\z), logger.debugs.first
+        end
+
+        def assert_filtered_log_binds(binds)
+          payload = {
+            name: "SQL",
+            sql: "select * from users where auth_token = ?",
+            binds: binds,
+            type_casted_binds: @connection.send(:type_casted_binds, binds)
+          }
+
+          event = ActiveSupport::Notifications::Event.new(
+            "foo",
+            Time.now,
+            Time.now,
+            123,
+            payload)
+
+          logger = Class.new(ActiveRecord::LogSubscriber) {
+            attr_reader :debugs
+
+            def initialize
+              super
+              @debugs = []
+            end
+
+            def debug(str)
+              @debugs << str
+            end
+          }.new
+
+          logger.sql(event)
+          assert_match %r/#{Regexp.escape '[["auth_token", "[FILTERED]"]]'}/, logger.debugs.first
         end
     end
   end

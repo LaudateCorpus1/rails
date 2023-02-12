@@ -13,6 +13,7 @@ module ActionView
     config.action_view.image_loading = nil
     config.action_view.image_decoding = nil
     config.action_view.apply_stylesheet_media_default = true
+    config.action_view.prepend_content_exfiltration_prevention = false
 
     config.eager_load_namespaces << ActionView
 
@@ -41,10 +42,20 @@ module ActionView
     end
 
     config.after_initialize do |app|
+      prepend_content_exfiltration_prevention = app.config.action_view.delete(:prepend_content_exfiltration_prevention)
+      ActionView::Helpers::ContentExfiltrationPreventionHelper.prepend_content_exfiltration_prevention = prepend_content_exfiltration_prevention
+    end
+
+    config.after_initialize do |app|
       button_to_generates_button_tag = app.config.action_view.delete(:button_to_generates_button_tag)
       unless button_to_generates_button_tag.nil?
         ActionView::Helpers::UrlHelper.button_to_generates_button_tag = button_to_generates_button_tag
       end
+    end
+
+    config.after_initialize do |app|
+      frozen_string_literal = app.config.action_view.delete(:frozen_string_literal)
+      ActionView::Template.frozen_string_literal = frozen_string_literal
     end
 
     config.after_initialize do |app|
@@ -62,6 +73,10 @@ module ActionView
       end
     end
 
+    initializer "action_view.deprecator", before: :load_environment_config do |app|
+      app.deprecators[:action_view] = ActionView.deprecator
+    end
+
     initializer "action_view.logger" do
       ActiveSupport.on_load(:action_view) { self.logger ||= Rails.logger }
     end
@@ -69,7 +84,7 @@ module ActionView
     initializer "action_view.caching" do |app|
       ActiveSupport.on_load(:action_view) do
         if app.config.action_view.cache_template_loading.nil?
-          ActionView::Resolver.caching = app.config.cache_classes
+          ActionView::Resolver.caching = !app.config.reloading_enabled?
         end
       end
     end
@@ -86,7 +101,7 @@ module ActionView
 
     config.after_initialize do |app|
       enable_caching = if app.config.action_view.cache_template_loading.nil?
-        app.config.cache_classes
+        !app.config.reloading_enabled?
       else
         app.config.action_view.cache_template_loading
       end

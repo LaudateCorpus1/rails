@@ -38,7 +38,7 @@ Rails 7 ends the transition period and does not include `classic` mode.
 I am Scared
 -----------
 
-Don't :).
+Don't be :).
 
 Zeitwerk was designed to be as compatible with the classic autoloader as possible. If you have a working application autoloading correctly today, chances are the switch will be easy. Many projects, big and small, have reported really smooth switches.
 
@@ -50,11 +50,11 @@ If for whatever reason you find a situation you don't know how to resolve, don't
 How to Activate `zeitwerk` Mode
 -------------------------------
 
-### Applications running Rails 5.x or Less
+### Applications Running Rails 5.x or Less
 
 In applications running a Rails version previous to 6.0, `zeitwerk` mode is not available. You need to be at least in Rails 6.0.
 
-### Applications running Rails 6.x
+### Applications Running Rails 6.x
 
 In applications running Rails 6.x there are two scenarios.
 
@@ -98,7 +98,26 @@ If that prints `true`, `zeitwerk` mode is enabled.
 Does my Application Comply with Zeitwerk Conventions?
 -----------------------------------------------------
 
-Once `zeitwerk` mode is enabled, please run:
+### config.eager_load_paths
+
+Compliance test runs only for eager loaded files. Therefore, in order to verify Zeitwerk compliance, it is recommended to have all autoload paths in the eager load paths.
+
+This is already the case by default, but if the project has custom autoload paths configured just like this:
+
+```ruby
+config.autoload_paths << "#{Rails.root}/extras"
+```
+
+those are not eager loaded and won't be verified. Adding them to the eager load paths is easy:
+
+```ruby
+config.autoload_paths << "#{Rails.root}/extras"
+config.eager_load_paths << "#{Rails.root}/extras"
+```
+
+### zeitwerk:check
+
+Once `zeitwerk` mode is enabled and the configuration of eager load paths double-checked, please run:
 
 ```
 bin/rails zeitwerk:check
@@ -114,7 +133,9 @@ All is good!
 
 There can be additional output depending on the application configuration, but the last "All is good!" is what you are looking for.
 
-If there's any file that does not define the expected constant, the task will tell you. It does so one file at a time, because if it moved on, the failure loading one file could cascade into other failures unrelated to the check we want to run and the error report would be confusing.
+If the double-check explained in the previous section determined actually there have to be some custom autoload paths outside the eager load paths, the task will detect and warn about them. However, if the test suite loads those files successfully, you're good.
+
+Now, if there's any file that does not define the expected constant, the task will tell you. It does so one file at a time, because if it moved on, the failure loading one file could cascade into other failures unrelated to the check we want to run and the error report would be confusing.
 
 If there's one constant reported, fix that particular one and run the task again. Repeat until you get "All is good!".
 
@@ -134,7 +155,7 @@ This is the most common kind of discrepancy you may find, it has to do with acro
 
 The classic autoloader is able to autoload `VAT` because its input is the name of the missing constant, `VAT`, invokes `underscore` on it, which yields `vat`, and looks for a file called `vat.rb`. It works.
 
-The input of the new autoloader is the file system. Give the file `vat.rb`, Zeitwerk invokes `camelize` on `vat`, which yields `Vat`, and expects the file to define the constant `Vat`. That is what the error message says.
+The input of the new autoloader is the file system. Given the file `vat.rb`, Zeitwerk invokes `camelize` on `vat`, which yields `Vat`, and expects the file to define the constant `Vat`. That is what the error message says.
 
 Fixing this is easy, you only need to tell the inflector about this acronym:
 
@@ -145,14 +166,14 @@ ActiveSupport::Inflector.inflections(:en) do |inflect|
 end
 ```
 
-Doing so affects how Active Support inflects globally. That may be fine, but if you prefer you can also pass overrides to the inflector used by the autoloader:
+Doing so affects how Active Support inflects globally. That may be fine, but if you prefer you can also pass overrides to the inflectors used by the autoloaders:
 
 ```ruby
 # config/initializers/zeitwerk.rb
-Rails.autoloaders.each do |autoloader|
-  autoloader.inflector.inflect("vat" => "VAT")
-end
+Rails.autoloaders.main.inflector.inflect("vat" => "VAT")
 ```
+
+With this option you have more control, because only files called exactly `vat.rb` or directories exactly called `vat` will be inflected as `VAT`. A file called `vat_rules.rb` is not affected by that and can define `VatRules` just fine. This may be handy if the project has this kind of naming inconsistencies.
 
 With that in place, the check passes!
 
@@ -187,11 +208,11 @@ If your application uses `Concerns` as namespace, you have two options:
     delete("#{Rails.root}/app/models/concerns")
   ```
 
-### Having `app` in the autoload paths
+### Having `app` in the Autoload Paths
 
 Some projects want something like `app/api/base.rb` to define `API::Base`, and add `app` to the autoload paths to accomplish that.
 
-Since Rails adds all subdirectories of `app` to the autoload paths automatically (with a few exceptions like directories for assets), we have another situation in which there are nested root directories, similar to what happens with `app/models/concerns`. That setup no longer works as is.
+Since Rails adds all subdirectories of `app` to the autoload paths automatically (with a few exceptions), we have another situation in which there are nested root directories, similar to what happens with `app/models/concerns`. That setup no longer works as is.
 
 However, you can keep that structure, just delete `app/api` from the autoload paths in an initializer:
 
@@ -201,6 +222,22 @@ ActiveSupport::Dependencies.
   autoload_paths.
   delete("#{Rails.root}/app/api")
 ```
+
+Beware of subdirectories that do not have files to be autoloaded/eager loaded. For example, if the application has `app/admin` with resources for [ActiveAdmin](https://activeadmin.info/), you need to ignore them. Same for `assets` and friends:
+
+```ruby
+# config/initializers/zeitwerk.rb
+Rails.autoloaders.main.ignore(
+  "app/admin",
+  "app/assets",
+  "app/javascripts",
+  "app/views"
+)
+```
+
+Without that configuration, the application would eager load those trees. Would err on `app/admin` because its files do not define constants, and would define a `Views` module, for example, as an unwanted side-effect.
+
+As you see, having `app` in the autoload paths is technically possible, but a bit tricky.
 
 ### Autoloaded Constants and Explicit Namespaces
 
@@ -236,7 +273,7 @@ won't work, child objects like `Hotel::Pricing` won't be found.
 
 This restriction only applies to explicit namespaces. Classes and modules not defining a namespace can be defined using those idioms.
 
-### One file, one constant (at the same top-level)
+### One File, One Constant (at the Same Top-level)
 
 In `classic` mode you could technically define several constants at the same top-level and have them all reloaded. For example, given
 
@@ -283,6 +320,55 @@ To fix this, just remove the wildcards:
 config.autoload_paths << "#{config.root}/extras"
 ```
 
+### Decorating Classes and Modules from Engines
+
+If your application decorates classes or modules from an engine, chances are it is doing something like this somewhere:
+
+```ruby
+config.to_prepare do
+  Dir.glob("#{Rails.root}/app/overrides/**/*_override.rb").each do |override|
+    require_dependency override
+  end
+end
+```
+
+That has to be updated: You need to tell the `main` autoloader to ignore the directory with the overrides, and you need to load them with `load` instead. Something like this:
+
+```ruby
+overrides = "#{Rails.root}/app/overrides"
+Rails.autoloaders.main.ignore(overrides)
+config.to_prepare do
+  Dir.glob("#{overrides}/**/*_override.rb").each do |override|
+    load override
+  end
+end
+```
+
+### `before_remove_const`
+
+Rails 3.1 added support for a callback called `before_remove_const` that was invoked if a class or module responded to this method and was about to be reloaded. This callback has remained otherwise undocumented and it is unlikely that your code uses it.
+
+However, in case it does, you can rewrite something like
+
+```ruby
+class Country < ActiveRecord::Base
+  def self.before_remove_const
+    expire_redis_cache
+  end
+end
+```
+
+as
+
+```ruby
+# config/initializers/country.rb
+if Rails.application.config.reloading_enabled?
+  Rails.autoloaders.main.on_unload("Country") do |klass, _abspath|
+    klass.expire_redis_cache
+  end
+end
+```
+
 ### Spring and the `test` Environment
 
 Spring reloads the application code if something changes. In the `test` environment you need to enable reloading for that to work:
@@ -292,10 +378,23 @@ Spring reloads the application code if something changes. In the `test` environm
 config.cache_classes = false
 ```
 
-Otherwise you'll get this error:
+or, since Rails 7.1:
+
+```ruby
+# config/environments/test.rb
+config.enable_reloading = true
+```
+
+Otherwise, you'll get:
 
 ```
 reloading is disabled because config.cache_classes is true
+```
+
+or
+
+```
+reloading is disabled because config.enable_reloading is false
 ```
 
 This has no performance penalty.
@@ -327,7 +426,7 @@ Starting with Rails 7, newly generated applications are configured that way by d
 
 If your project does not have continuous integration, you can still eager load in the test suite by calling `Rails.application.eager_load!`:
 
-#### minitest
+#### Minitest
 
 ```ruby
 require "test_helper"
@@ -351,7 +450,7 @@ RSpec.describe "Zeitwerk compliance" do
 end
 ```
 
-Delete any `require` calls
+Delete any `require` Calls
 --------------------------
 
 In my experience, projects generally do not do this. But I've seen a couple, and have heard of a few others.
@@ -369,13 +468,13 @@ Please delete any `require` calls of that type.
 New Features You Can Leverage
 -----------------------------
 
-### Delete `require_dependency` calls
+### Delete `require_dependency` Calls
 
 All known use cases of `require_dependency` have been eliminated with Zeitwerk. You should grep the project and delete them.
 
 If your application uses Single Table Inheritance, please see the [Single Table Inheritance section](autoloading_and_reloading_constants.html#single-table-inheritance) of the Autoloading and Reloading Constants (Zeitwerk Mode) guide.
 
-### Qualified Names in Class and Module Definitions Are Now Possible
+### Qualified Names in Class and Module Definitions are Now Possible
 
 You can now robustly use constant paths in class and module definitions:
 

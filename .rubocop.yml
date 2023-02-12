@@ -159,6 +159,9 @@ Style/FrozenStringLiteralComment:
     - 'actionmailbox/db/migrate/**/*.rb'
     - 'actiontext/db/migrate/**/*.rb'
 
+Style/MapToHash:
+  Enabled: true
+
 Style/RedundantFreeze:
   Enabled: true
 
@@ -208,10 +211,16 @@ Lint/AmbiguousRegexpLiteral:
 Lint/DuplicateRequire:
   Enabled: true
 
+Lint/DuplicateMagicComment:
+  Enabled: true
+
 Lint/DuplicateMethods:
   Enabled: true
 
 Lint/ErbNewArguments:
+  Enabled: true
+
+Lint/EnsureReturn:
   Enabled: true
 
 # Use my_method(my_arg) not my_method( my_arg ) or my_method my_arg.
@@ -229,6 +238,11 @@ Lint/UselessAssignment:
 
 Lint/DeprecatedClassMethods:
   Enabled: true
+
+Style/EvalWithLocation:
+  Enabled: true
+  Exclude:
+    - '**/test/**/*'
 
 Style/ParenthesesAroundCondition:
   Enabled: true
@@ -258,6 +272,10 @@ Style/ColonMethodCall:
   Enabled: true
 
 Style/TrivialAccessors:
+  Enabled: true
+
+# Prefer a = b || c over a = b ? b : c
+Style/RedundantCondition:
   Enabled: true
 
 Performance/BindCall:
@@ -297,6 +315,30 @@ Performance/DeletePrefix:
   Enabled: true
 
 Performance/DeleteSuffix:
+  Enabled: true
+
+Performance/OpenStruct:
+  Enabled: true
+
+Performance/InefficientHashSearch:
+  Enabled: true
+
+Performance/ConstantRegexp:
+  Enabled: true
+
+Performance/RedundantStringChars:
+  Enabled: true
+
+Performance/StringInclude:
+  Enabled: true
+
+Minitest/AssertRaisesWithRegexpArgument:
+  Enabled: true
+
+Minitest/AssertWithExpectedArgument:
+  Enabled: true
+
+Minitest/SkipEnsure:
   Enabled: true
 
 Minitest/UnreachableAssertion:

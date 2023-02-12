@@ -2,7 +2,7 @@
 
 module ActiveRecord
   module Encryption
-    # An +ActiveModel::Type+ that encrypts/decrypts strings of text.
+    # An ActiveModel::Type::Value that encrypts/decrypts strings of text.
     #
     # This is the central piece that connects the encryption system with +encrypts+ declarations in the
     # model classes. Whenever you declare an attribute as encrypted, it configures an +EncryptedAttributeType+
@@ -19,12 +19,17 @@ module ActiveRecord
       #
       # * <tt>:scheme</tt> - A +Scheme+ with the encryption properties for this attribute.
       # * <tt>:cast_type</tt> - A type that will be used to serialize (before encrypting) and deserialize
-      #   (after decrypting). +ActiveModel::Type::String+ by default.
-      def initialize(scheme:, cast_type: ActiveModel::Type::String.new, previous_type: false)
+      #   (after decrypting). ActiveModel::Type::String by default.
+      def initialize(scheme:, cast_type: ActiveModel::Type::String.new, previous_type: false, default: nil)
         super()
         @scheme = scheme
         @cast_type = cast_type
         @previous_type = previous_type
+        @default = default
+      end
+
+      def cast(value)
+        cast_type.cast(value)
       end
 
       def deserialize(value)
@@ -70,7 +75,15 @@ module ActiveRecord
 
         def decrypt(value)
           with_context do
-            encryptor.decrypt(value, **decryption_options) unless value.nil?
+            unless value.nil?
+              default = @default.call if @default
+
+              if default && default == value
+                value
+              else
+                encryptor.decrypt(value, **decryption_options)
+              end
+            end
           end
         rescue ActiveRecord::Encryption::Errors::Base => error
           if previous_types_without_clean_text.blank?

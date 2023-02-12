@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 #--
-# Copyright (c) 2004-2021 David Heinemeier Hansson
+# Copyright (c) 2004-2022 David Heinemeier Hansson
 #
 # Permission is hereby granted, free of charge, to any person obtaining
 # a copy of this software and associated documentation files (the
@@ -29,16 +29,21 @@ require "active_support/core_ext/module/attribute_accessors"
 
 require "action_pack"
 require "rack"
+require "action_dispatch/deprecator"
 
 module Rack
   autoload :Test, "rack/test"
 end
 
 module ActionDispatch
+  include ActiveSupport::Deprecation::DeprecatedConstantAccessor
   extend ActiveSupport::Autoload
 
-  class IllegalStateError < StandardError
+  class DeprecatedIllegalStateError < StandardError
   end
+  deprecate_constant "IllegalStateError", "ActionDispatch::DeprecatedIllegalStateError",
+    message: "ActionDispatch::IllegalStateError is deprecated without replacement.",
+    deprecator: ActionDispatch.deprecator
 
   class MissingController < NameError
   end
@@ -53,6 +58,7 @@ module ActionDispatch
   end
 
   autoload_under "middleware" do
+    autoload :AssumeSSL
     autoload :HostAuthorization
     autoload :RequestId
     autoload :Callbacks
@@ -94,6 +100,19 @@ module ActionDispatch
     autoload :CookieStore,         "action_dispatch/middleware/session/cookie_store"
     autoload :MemCacheStore,       "action_dispatch/middleware/session/mem_cache_store"
     autoload :CacheStore,          "action_dispatch/middleware/session/cache_store"
+
+    def self.resolve_store(session_store) # :nodoc:
+      self.const_get(session_store.to_s.camelize)
+    rescue NameError
+      raise <<~ERROR
+        Unable to resolve session store #{session_store.inspect}.
+
+        #{session_store.inspect} resolves to ActionDispatch::Session::#{session_store.to_s.camelize},
+        but that class is undefined.
+
+        Is #{session_store.inspect} spelled correctly, and are any necessary gems installed?
+      ERROR
+    end
   end
 
   mattr_accessor :test_app
@@ -109,6 +128,11 @@ module ActionDispatch
   end
 
   autoload :SystemTestCase, "action_dispatch/system_test_case"
+
+  def eager_load!
+    super
+    Routing.eager_load!
+  end
 end
 
 autoload :Mime, "action_dispatch/http/mime_type"

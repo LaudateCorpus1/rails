@@ -183,7 +183,7 @@ module ActionView
   # be rendered directly, without wrapping a layout around the rendered view.
   #
   # Both the <tt>:only</tt> and <tt>:except</tt> condition can accept an arbitrary number of method references, so
-  # #<tt>except: [ :rss, :text_only ]</tt> is valid, as is <tt>except: :rss</tt>.
+  # <tt>except: [ :rss, :text_only ]</tt> is valid, as is <tt>except: :rss</tt>.
   #
   # == Using a different layout in the action render call
   #
@@ -210,9 +210,9 @@ module ActionView
       class_attribute :_layout_conditions, instance_accessor: false, default: {}
 
       _write_layout_method
-    end
 
-    delegate :_layout_conditions, to: :class
+      delegate :_layout_conditions, to: :class
+    end
 
     module ClassMethods
       def inherited(klass) # :nodoc:
@@ -255,14 +255,17 @@ module ActionView
       # true::   raise an ArgumentError
       # nil::    Force default layout behavior with inheritance
       #
-      # Return value of +Proc+ and +Symbol+ arguments should be +String+, +false+, +true+ or +nil+
+      # Return value of +Proc+ and +Symbol+ arguments should be +String+, +false+, +true+, or +nil+
       # with the same meaning as described above.
+      #
       # ==== Parameters
+      #
       # * <tt>layout</tt> - The layout to use.
       #
       # ==== Options (conditions)
-      # * :only   - A list of actions to apply this layout to.
-      # * :except - Apply this layout to all actions but this one.
+      #
+      # * +:only+   - A list of actions to apply this layout to.
+      # * +:except+ - Apply this layout to all actions but this one.
       def layout(layout, conditions = {})
         include LayoutConditions unless conditions.empty?
 

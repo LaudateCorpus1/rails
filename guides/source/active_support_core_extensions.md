@@ -85,7 +85,9 @@ That does not even put the entire Active Support in memory upfront indeed, some 
 
 ### Active Support Within a Ruby on Rails Application
 
-A Ruby on Rails application loads all Active Support unless `config.active_support.bare` is true. In that case, the application will only load what the framework itself cherry-picks for its own needs, and can still cherry-pick itself at any granularity level, as explained in the previous section.
+A Ruby on Rails application loads all Active Support unless [`config.active_support.bare`][] is true. In that case, the application will only load what the framework itself cherry-picks for its own needs, and can still cherry-pick itself at any granularity level, as explained in the previous section.
+
+[`config.active_support.bare`]: configuring.html#config-active-support-bare
 
 Extensions to All Objects
 -------------------------
@@ -449,7 +451,7 @@ NOTE: Defined in `active_support/core_ext/object/with_options.rb`.
 
 [Object#with_options]: https://api.rubyonrails.org/classes/Object.html#method-i-with_options
 
-### JSON support
+### JSON Support
 
 Active Support provides a better implementation of `to_json` than the `json` gem ordinarily provides for Ruby objects. This is because some classes, like `Hash` and `Process::Status` need special handling in order to provide a proper JSON representation.
 
@@ -1689,8 +1691,8 @@ To preserve the case of the string, set the `preserve_case` argument to true. By
 To use a custom separator, override the `separator` argument.
 
 ```ruby
-"John Smith".parameterize(separator: "_") # => "john\_smith"
-"Kurt Gödel".parameterize(separator: "_") # => "kurt\_godel"
+"John Smith".parameterize(separator: "_") # => "john_smith"
+"Kurt Gödel".parameterize(separator: "_") # => "kurt_godel"
 ```
 
 NOTE: Defined in `active_support/core_ext/string/inflections.rb`.
@@ -1857,6 +1859,32 @@ NOTE: Defined in `active_support/core_ext/string/inflections.rb`.
 
 [String#foreign_key]: https://api.rubyonrails.org/classes/String.html#method-i-foreign_key
 
+#### `upcase_first`
+
+The method [`upcase_first`][String#upcase_first] capitalizes the first letter of the receiver:
+
+```ruby
+"employee salary".upcase_first # => "Employee salary"
+"".upcase_first                # => ""
+```
+
+NOTE: Defined in `active_support/core_ext/string/inflections.rb`.
+
+[String#upcase_first]: https://api.rubyonrails.org/classes/String.html#method-i-upcase_first
+
+#### `downcase_first`
+
+The method [`downcase_first`][String#downcase_first] converts the first letter of the receiver to lowercase:
+
+```ruby
+"If I had read Alice in Wonderland".downcase_first # => "if I had read Alice in Wonderland"
+"".downcase_first                                  # => ""
+```
+
+NOTE: Defined in `active_support/core_ext/string/inflections.rb`.
+
+[String#downcase_first]: https://api.rubyonrails.org/classes/String.html#method-i-downcase_first
+
 ### Conversions
 
 #### `to_date`, `to_time`, `to_datetime`
@@ -1922,7 +1950,7 @@ They return the corresponding amount of bytes, using a conversion factor of 1024
 ```ruby
 2.kilobytes   # => 2048
 3.megabytes   # => 3145728
-3.5.gigabytes # => 3758096384
+3.5.gigabytes # => 3758096384.0
 -4.exabytes   # => -4611686018427387904
 ```
 
@@ -1988,84 +2016,84 @@ Enables the formatting of numbers in a variety of ways.
 Produce a string representation of a number as a telephone number:
 
 ```ruby
-5551234.to_s(:phone)
+5551234.to_fs(:phone)
 # => 555-1234
-1235551234.to_s(:phone)
+1235551234.to_fs(:phone)
 # => 123-555-1234
-1235551234.to_s(:phone, area_code: true)
+1235551234.to_fs(:phone, area_code: true)
 # => (123) 555-1234
-1235551234.to_s(:phone, delimiter: " ")
+1235551234.to_fs(:phone, delimiter: " ")
 # => 123 555 1234
-1235551234.to_s(:phone, area_code: true, extension: 555)
+1235551234.to_fs(:phone, area_code: true, extension: 555)
 # => (123) 555-1234 x 555
-1235551234.to_s(:phone, country_code: 1)
+1235551234.to_fs(:phone, country_code: 1)
 # => +1-123-555-1234
 ```
 
 Produce a string representation of a number as currency:
 
 ```ruby
-1234567890.50.to_s(:currency)                 # => $1,234,567,890.50
-1234567890.506.to_s(:currency)                # => $1,234,567,890.51
-1234567890.506.to_s(:currency, precision: 3)  # => $1,234,567,890.506
+1234567890.50.to_fs(:currency)                 # => $1,234,567,890.50
+1234567890.506.to_fs(:currency)                # => $1,234,567,890.51
+1234567890.506.to_fs(:currency, precision: 3)  # => $1,234,567,890.506
 ```
 
 Produce a string representation of a number as a percentage:
 
 ```ruby
-100.to_s(:percentage)
+100.to_fs(:percentage)
 # => 100.000%
-100.to_s(:percentage, precision: 0)
+100.to_fs(:percentage, precision: 0)
 # => 100%
-1000.to_s(:percentage, delimiter: '.', separator: ',')
+1000.to_fs(:percentage, delimiter: '.', separator: ',')
 # => 1.000,000%
-302.24398923423.to_s(:percentage, precision: 5)
+302.24398923423.to_fs(:percentage, precision: 5)
 # => 302.24399%
 ```
 
 Produce a string representation of a number in delimited form:
 
 ```ruby
-12345678.to_s(:delimited)                     # => 12,345,678
-12345678.05.to_s(:delimited)                  # => 12,345,678.05
-12345678.to_s(:delimited, delimiter: ".")     # => 12.345.678
-12345678.to_s(:delimited, delimiter: ",")     # => 12,345,678
-12345678.05.to_s(:delimited, separator: " ")  # => 12,345,678 05
+12345678.to_fs(:delimited)                     # => 12,345,678
+12345678.05.to_fs(:delimited)                  # => 12,345,678.05
+12345678.to_fs(:delimited, delimiter: ".")     # => 12.345.678
+12345678.to_fs(:delimited, delimiter: ",")     # => 12,345,678
+12345678.05.to_fs(:delimited, separator: " ")  # => 12,345,678 05
 ```
 
 Produce a string representation of a number rounded to a precision:
 
 ```ruby
-111.2345.to_s(:rounded)                     # => 111.235
-111.2345.to_s(:rounded, precision: 2)       # => 111.23
-13.to_s(:rounded, precision: 5)             # => 13.00000
-389.32314.to_s(:rounded, precision: 0)      # => 389
-111.2345.to_s(:rounded, significant: true)  # => 111
+111.2345.to_fs(:rounded)                     # => 111.235
+111.2345.to_fs(:rounded, precision: 2)       # => 111.23
+13.to_fs(:rounded, precision: 5)             # => 13.00000
+389.32314.to_fs(:rounded, precision: 0)      # => 389
+111.2345.to_fs(:rounded, significant: true)  # => 111
 ```
 
 Produce a string representation of a number as a human-readable number of bytes:
 
 ```ruby
-123.to_s(:human_size)                  # => 123 Bytes
-1234.to_s(:human_size)                 # => 1.21 KB
-12345.to_s(:human_size)                # => 12.1 KB
-1234567.to_s(:human_size)              # => 1.18 MB
-1234567890.to_s(:human_size)           # => 1.15 GB
-1234567890123.to_s(:human_size)        # => 1.12 TB
-1234567890123456.to_s(:human_size)     # => 1.1 PB
-1234567890123456789.to_s(:human_size)  # => 1.07 EB
+123.to_fs(:human_size)                  # => 123 Bytes
+1234.to_fs(:human_size)                 # => 1.21 KB
+12345.to_fs(:human_size)                # => 12.1 KB
+1234567.to_fs(:human_size)              # => 1.18 MB
+1234567890.to_fs(:human_size)           # => 1.15 GB
+1234567890123.to_fs(:human_size)        # => 1.12 TB
+1234567890123456.to_fs(:human_size)     # => 1.1 PB
+1234567890123456789.to_fs(:human_size)  # => 1.07 EB
 ```
 
 Produce a string representation of a number in human-readable words:
 
 ```ruby
-123.to_s(:human)               # => "123"
-1234.to_s(:human)              # => "1.23 Thousand"
-12345.to_s(:human)             # => "12.3 Thousand"
-1234567.to_s(:human)           # => "1.23 Million"
-1234567890.to_s(:human)        # => "1.23 Billion"
-1234567890123.to_s(:human)     # => "1.23 Trillion"
-1234567890123456.to_s(:human)  # => "1.23 Quadrillion"
+123.to_fs(:human)               # => "123"
+1234.to_fs(:human)              # => "1.23 Thousand"
+12345.to_fs(:human)             # => "12.3 Thousand"
+1234567.to_fs(:human)           # => "1.23 Million"
+1234567890.to_fs(:human)        # => "1.23 Billion"
+1234567890123.to_fs(:human)     # => "1.23 Trillion"
+1234567890123456.to_fs(:human)  # => "1.23 Quadrillion"
 ```
 
 NOTE: Defined in `active_support/core_ext/numeric/conversions.rb`.
@@ -2158,12 +2186,6 @@ The method `to_s` provides a default specifier of "F". This means that a simple 
 
 ```ruby
 BigDecimal(5.00, 6).to_s       # => "5.0"
-```
-
-and that symbol specifiers are also supported:
-
-```ruby
-BigDecimal(5.00, 6).to_s(:db)  # => "5.0"
 ```
 
 Engineering notation is still supported:
@@ -2472,25 +2494,25 @@ NOTE: Defined in `active_support/core_ext/array/conversions.rb`.
 
 [Array#to_sentence]: https://api.rubyonrails.org/classes/Array.html#method-i-to_sentence
 
-#### `to_formatted_s`
+#### `to_fs`
 
-The method [`to_formatted_s`][Array#to_formatted_s] acts like `to_s` by default.
+The method [`to_fs`][Array#to_fs] acts like `to_s` by default.
 
 If the array contains items that respond to `id`, however, the symbol
 `:db` may be passed as argument. That's typically used with
 collections of Active Record objects. Returned strings are:
 
 ```ruby
-[].to_formatted_s(:db)            # => "null"
-[user].to_formatted_s(:db)        # => "8456"
-invoice.lines.to_formatted_s(:db) # => "23,567,556,12"
+[].to_fs(:db)            # => "null"
+[user].to_fs(:db)        # => "8456"
+invoice.lines.to_fs(:db) # => "23,567,556,12"
 ```
 
 Integers in the example above are supposed to come from the respective calls to `id`.
 
 NOTE: Defined in `active_support/core_ext/array/conversions.rb`.
 
-[Array#to_formatted_s]: https://api.rubyonrails.org/classes/Array.html#method-i-to_formatted_s
+[Array#to_fs]: https://api.rubyonrails.org/classes/Array.html#method-i-to_fs
 
 #### `to_xml`
 
@@ -2873,7 +2895,7 @@ NOTE: Defined in `active_support/core_ext/hash/deep_merge.rb`.
 [Hash#deep_merge!]: https://api.rubyonrails.org/classes/Hash.html#method-i-deep_merge-21
 [Hash#deep_merge]: https://api.rubyonrails.org/classes/Hash.html#method-i-deep_merge
 
-### Deep duplicating
+### Deep Duplicating
 
 The method [`Hash#deep_dup`][Hash#deep_dup] duplicates itself and all keys and values
 inside recursively with Active Support method `Object#deep_dup`. It works like `Enumerator#each_with_object` with sending `deep_dup` method to each pair inside.
@@ -3136,15 +3158,15 @@ NOTE: Defined in `active_support/core_ext/regexp.rb`.
 Extensions to `Range`
 ---------------------
 
-### `to_s`
+### `to_fs`
 
-Active Support extends the method `Range#to_s` so that it understands an optional format argument. As of this writing the only supported non-default format is `:db`:
+Active Support defines `Range#to_fs` as an alternative to `to_s` that understands an optional format argument. As of this writing the only supported non-default format is `:db`:
 
 ```ruby
-(Date.today..Date.tomorrow).to_s
+(Date.today..Date.tomorrow).to_fs
 # => "2009-10-25..2009-10-26"
 
-(Date.today..Date.tomorrow).to_s(:db)
+(Date.today..Date.tomorrow).to_fs(:db)
 # => "BETWEEN '2009-10-25' AND '2009-10-26'"
 ```
 
@@ -3213,14 +3235,14 @@ NOTE: Defined in `active_support/core_ext/date/calculations.rb`.
 [DateAndTime::Calculations#on_weekend?]: https://api.rubyonrails.org/classes/DateAndTime/Calculations.html#method-i-on_weekend-3F
 [DateAndTime::Calculations#past?]: https://api.rubyonrails.org/classes/DateAndTime/Calculations.html#method-i-past-3F
 
-#### Named dates
+#### Named Dates
 
 ##### `beginning_of_week`, `end_of_week`
 
 The methods [`beginning_of_week`][DateAndTime::Calculations#beginning_of_week] and [`end_of_week`][DateAndTime::Calculations#end_of_week] return the dates for the
 beginning and end of the week, respectively. Weeks are assumed to start on
 Monday, but that can be changed passing an argument, setting thread local
-`Date.beginning_of_week` or `config.beginning_of_week`.
+`Date.beginning_of_week` or [`config.beginning_of_week`][].
 
 ```ruby
 d = Date.new(2010, 5, 8)     # => Sat, 08 May 2010
@@ -3234,6 +3256,7 @@ d.end_of_week(:sunday)       # => Sat, 08 May 2010
 
 NOTE: Defined in `active_support/core_ext/date_and_time/calculations.rb`.
 
+[`config.beginning_of_week`]: configuring.html#config-beginning-of-week
 [DateAndTime::Calculations#at_beginning_of_week]: https://api.rubyonrails.org/classes/DateAndTime/Calculations.html#method-i-at_beginning_of_week
 [DateAndTime::Calculations#at_end_of_week]: https://api.rubyonrails.org/classes/DateAndTime/Calculations.html#method-i-at_end_of_week
 [DateAndTime::Calculations#beginning_of_week]: https://api.rubyonrails.org/classes/DateAndTime/Calculations.html#method-i-beginning_of_week
@@ -3263,7 +3286,7 @@ NOTE: Defined in `active_support/core_ext/date_and_time/calculations.rb`.
 
 ##### `prev_week`, `next_week`
 
-The method [`next_week`][DateAndTime::Calculations#next_week] receives a symbol with a day name in English (default is the thread local [`Date.beginning_of_week`][Date.beginning_of_week], or `config.beginning_of_week`, or `:monday`) and it returns the date corresponding to that day.
+The method [`next_week`][DateAndTime::Calculations#next_week] receives a symbol with a day name in English (default is the thread local [`Date.beginning_of_week`][Date.beginning_of_week], or [`config.beginning_of_week`][], or `:monday`) and it returns the date corresponding to that day.
 
 ```ruby
 d = Date.new(2010, 5, 9) # => Sun, 09 May 2010
@@ -3309,7 +3332,14 @@ NOTE: Defined in `active_support/core_ext/date_and_time/calculations.rb`.
 [DateAndTime::Calculations#beginning_of_month]: https://api.rubyonrails.org/classes/DateAndTime/Calculations.html#method-i-beginning_of_month
 [DateAndTime::Calculations#end_of_month]: https://api.rubyonrails.org/classes/DateAndTime/Calculations.html#method-i-end_of_month
 
-##### `beginning_of_quarter`, `end_of_quarter`
+##### `quarter`, `beginning_of_quarter`, `end_of_quarter`
+
+The method [`quarter`][DateAndTime::Calculations#quarter] returns the quarter of the receiver's calendar year:
+
+```ruby
+d = Date.new(2010, 5, 9) # => Sun, 09 May 2010
+d.quarter                # => 2
+```
 
 The methods [`beginning_of_quarter`][DateAndTime::Calculations#beginning_of_quarter] and [`end_of_quarter`][DateAndTime::Calculations#end_of_quarter] return the dates for the beginning and end of the quarter of the receiver's calendar year:
 
@@ -3323,6 +3353,7 @@ d.end_of_quarter         # => Wed, 30 Jun 2010
 
 NOTE: Defined in `active_support/core_ext/date_and_time/calculations.rb`.
 
+[DateAndTime::Calculations#quarter]: https://api.rubyonrails.org/classes/DateAndTime/Calculations.html#method-i-quarter
 [DateAndTime::Calculations#at_beginning_of_quarter]: https://api.rubyonrails.org/classes/DateAndTime/Calculations.html#method-i-at_beginning_of_quarter
 [DateAndTime::Calculations#at_end_of_quarter]: https://api.rubyonrails.org/classes/DateAndTime/Calculations.html#method-i-at_end_of_quarter
 [DateAndTime::Calculations#beginning_of_quarter]: https://api.rubyonrails.org/classes/DateAndTime/Calculations.html#method-i-beginning_of_quarter
@@ -3428,22 +3459,6 @@ date.advance(months: 2, days: -2) # => Wed, 04 Aug 2010
 ```
 
 Note in the previous example that increments may be negative.
-
-To perform the computation the method first increments years, then months, then weeks, and finally days. This order is important towards the end of months. Say for example we are at the end of February of 2010, and we want to move one month and one day forward.
-
-The method `advance` advances first one month, and then one day, the result is:
-
-```ruby
-Date.new(2010, 2, 28).advance(months: 1, days: 1)
-# => Sun, 29 Mar 2010
-```
-
-While if it did it the other way around the result would be different:
-
-```ruby
-Date.new(2010, 2, 28).advance(days: 1).advance(months: 1)
-# => Thu, 01 Apr 2010
-```
 
 NOTE: Defined in `active_support/core_ext/date/calculations.rb`.
 
@@ -3559,7 +3574,7 @@ date.end_of_minute # => Mon Jun 07 19:55:59 +0200 2010
 
 `beginning_of_minute` is aliased to [`at_beginning_of_minute`][DateTime#at_beginning_of_minute].
 
-INFO: `beginning_of_hour`, `end_of_hour`, `beginning_of_minute` and `end_of_minute` are implemented for `Time` and `DateTime` but **not** `Date` as it does not make sense to request the beginning or end of an hour or minute on a `Date` instance.
+INFO: `beginning_of_hour`, `end_of_hour`, `beginning_of_minute`, and `end_of_minute` are implemented for `Time` and `DateTime` but **not** `Date` as it does not make sense to request the beginning or end of an hour or minute on a `Date` instance.
 
 NOTE: Defined in `active_support/core_ext/date_time/calculations.rb`.
 
@@ -3587,10 +3602,6 @@ NOTE: Defined in `active_support/core_ext/date/calculations.rb`.
 
 [Date#ago]: https://api.rubyonrails.org/classes/Date.html#method-i-ago
 [Date#since]: https://api.rubyonrails.org/classes/Date.html#method-i-since
-
-#### Other Time Computations
-
-### Conversions
 
 Extensions to `DateTime`
 ------------------------
@@ -3794,7 +3805,7 @@ t.advance(seconds: 1)
 # => Sun Mar 28 03:00:00 +0200 2010
 ```
 
-* If [`since`][Time#since] or [`ago`][Time#ago] jump to a time that can't be expressed with `Time` a `DateTime` object is returned instead.
+* If [`since`][Time#since] or [`ago`][Time#ago] jumps to a time that can't be expressed with `Time` a `DateTime` object is returned instead.
 
 [Time#ago]: https://api.rubyonrails.org/classes/Time.html#method-i-ago
 [Time#change]: https://api.rubyonrails.org/classes/Time.html#method-i-change
@@ -3814,7 +3825,7 @@ NOTE: Defined in `active_support/core_ext/time/calculations.rb`.
 [DateAndTime::Calculations#tomorrow?]: https://api.rubyonrails.org/classes/DateAndTime/Calculations.html#method-i-tomorrow-3F
 [DateAndTime::Calculations#yesterday?]: https://api.rubyonrails.org/classes/DateAndTime/Calculations.html#method-i-yesterday-3F
 
-#### `all_day`, `all_week`, `all_month`, `all_quarter` and `all_year`
+#### `all_day`, `all_week`, `all_month`, `all_quarter`, and `all_year`
 
 The method [`all_day`][DateAndTime::Calculations#all_day] returns a range representing the whole day of the current time.
 
@@ -4061,7 +4072,7 @@ Extensions to Pathname
 
 ### `existence`
 
-The [`existence`][Pathname#existence] method returns the receiver if the named file exists otherwise returns +nil+. It is useful for idioms like this:
+The [`existence`][Pathname#existence] method returns the receiver if the named file exists otherwise returns `nil`. It is useful for idioms like this:
 
 ```ruby
 content = Pathname.new("file").existence&.read

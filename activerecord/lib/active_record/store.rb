@@ -59,7 +59,7 @@ module ActiveRecord
   #   u.color = 'green'
   #   u.color_changed? # => true
   #   u.color_was # => 'black'
-  #   u.color_change # => ['black', 'red']
+  #   u.color_change # => ['black', 'green']
   #
   #   # Add additional accessors to an existing store through store_accessor
   #   class SuperUser < User
@@ -70,7 +70,7 @@ module ActiveRecord
   #
   # The stored attribute names can be retrieved using {.stored_attributes}[rdoc-ref:rdoc-ref:ClassMethods#stored_attributes].
   #
-  #   User.stored_attributes[:settings] # [:color, :homepage, :two_factor_auth, :login_retry]
+  #   User.stored_attributes[:settings] # => [:color, :homepage, :two_factor_auth, :login_retry]
   #
   # == Overwriting default accessors
   #
@@ -225,10 +225,7 @@ module ActiveRecord
 
         def self.write(object, attribute, key, value)
           prepare(object, attribute)
-          if value != read(object, attribute, key)
-            object.public_send :"#{attribute}_will_change!"
-            object.public_send(attribute)[key] = value
-          end
+          object.public_send(attribute)[key] = value if value != read(object, attribute, key)
         end
 
         def self.prepare(object, attribute)
@@ -268,7 +265,7 @@ module ActiveRecord
         end
 
         def dump(obj)
-          @coder.dump self.class.as_indifferent_hash(obj)
+          @coder.dump as_regular_hash(obj)
         end
 
         def load(yaml)
@@ -285,6 +282,11 @@ module ActiveRecord
             ActiveSupport::HashWithIndifferentAccess.new
           end
         end
+
+        private
+          def as_regular_hash(obj)
+            obj.respond_to?(:to_hash) ? obj.to_hash : {}
+          end
       end
   end
 end

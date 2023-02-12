@@ -4,19 +4,16 @@ require "rack"
 require "rails"
 require "action_controller/railtie"
 require "action_view/railtie"
-require "blade"
 require "json"
 
 module UJS
   class Server < Rails::Application
     routes.append do
-      get "/rails-ujs.js" => Blade::Assets.environment
-      get "/" => "tests#index"
       match "/echo" => "tests#echo", via: :all
-      get "/error" => proc { |env| [403, {}, []] }
+      get "/error" => proc { |env| [403, { "content-type" => "text/plain" }, []] }
     end
 
-    config.cache_classes = false
+    config.enable_reloading = true
     config.eager_load = false
     config.secret_key_base = "59d7a4dbd349fa3838d79e330e39690fc22b931e7dc17d9162f03d633d526fbb92dfdb2dc9804c8be3e199631b9c1fbe43fc3e4fc75730b515851849c728d5c7"
     config.paths["app/views"].unshift("#{Rails.root}/views")
@@ -76,7 +73,7 @@ class TestsController < ActionController::Base
       html = <<-HTML
         <script nonce="#{request.content_security_policy_nonce}">
           if (window.top && window.top !== window)
-            window.top.jQuery.event.trigger('iframe:loaded', #{payload})
+            window.parent.jQuery.event.trigger('iframe:loaded', #{payload})
         </script>
         <p>You shouldn't be seeing this. <a href="#{request.env['HTTP_REFERER']}">Go back</a></p>
       HTML
@@ -88,5 +85,4 @@ class TestsController < ActionController::Base
   end
 end
 
-Blade.initialize!
 UJS::Server.initialize!

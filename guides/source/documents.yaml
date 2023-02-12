@@ -185,6 +185,10 @@
       url: security.html
       description: This guide describes common security problems in web applications and how to avoid them with Rails.
     -
+      name: Error Reporting in Rails Applications
+      url: error_reporting.html
+      description: This guide introduces ways to manage exceptions that occur in Ruby on Rails applications.
+    -
       name: Debugging Rails Applications
       url: debugging_rails_applications.html
       description: This guide describes how to debug Rails applications. It covers the different ways of achieving this and how to understand what is happening "behind the scenes" of your code.
@@ -209,9 +213,10 @@
         CoffeeScript, Sass, and ERB.
     -
       name: Working with JavaScript in Rails
-      work_in_progress: true
       url: working_with_javascript_in_rails.html
-      description: This guide covers the built-in Ajax/JavaScript functionality of Rails.
+      description: >
+        This guide explains how to use import maps or jsbundling-rails to include
+        JavaScript in Rails applications, and covers the basics of working with Turbo in Rails.
     -
       name: The Rails Initialization Process
       work_in_progress: true
@@ -248,7 +253,6 @@
       description: This guide covers PostgreSQL specific usage of Active Record.
     -
       name: Multiple Databases with Active Record
-      work_in_progress: true
       url: active_record_multiple_databases.html
       description: This guide covers using multiple databases in your application.
     -
@@ -288,7 +292,7 @@
       description: This guide describes the considerations needed and tools available when working directly with concurrency in a Rails application.
       work_in_progress: true
 -
-  name: Contributions
+  name: Contributing
   documents:
     -
       name: Contributing to Ruby on Rails
@@ -302,6 +306,9 @@
       name: Guides Guidelines
       url: ruby_on_rails_guides_guidelines.html
       description: This guide documents the Ruby on Rails guides guidelines.
+    - name: Installing Rails Core Development Dependencies
+      url: development_dependencies_install.html
+      description: This guide covers how to set up an environment for Ruby on Rails core development.
 -
   name: Policies
   documents:
@@ -319,10 +326,14 @@
         This guide provides steps to be followed when you upgrade your
         applications to a newer version of Ruby on Rails.
     -
-      name: Version 7.0 - ?
+      name: Version 7.1 - ?
+      url: 7_1_release_notes.html
+      description: Release notes for Rails 7.1.
+      work_in_progress: true
+    -
+      name: Version 7.0 - December 2021
       url: 7_0_release_notes.html
       description: Release notes for Rails 7.0.
-      work_in_progress: true
     -
       name: Version 6.1 - December 2020
       url: 6_1_release_notes.html

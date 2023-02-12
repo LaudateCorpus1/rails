@@ -10,16 +10,18 @@ require "concurrent/map"
 module ActionView
   # = Action View Resolver
   class Resolver
-    Path = ActionView::TemplatePath
-    deprecate_constant :Path
+    include ActiveSupport::Deprecation::DeprecatedConstantAccessor
+    deprecate_constant "Path", "ActionView::TemplatePath", deprecator: ActionView.deprecator
 
     class PathParser # :nodoc:
       ParsedPath = Struct.new(:path, :details)
 
       def build_path_regex
-        handlers = Template::Handlers.extensions.map { |x| Regexp.escape(x) }.join("|")
-        formats = Template::Types.symbols.map { |x| Regexp.escape(x) }.join("|")
-        locales = "[a-z]{2}(?:-[A-Z]{2})?"
+        handlers = Regexp.union(Template::Handlers.extensions.map(&:to_s))
+        formats = Regexp.union(Template::Types.symbols.map(&:to_s))
+        available_locales = I18n.available_locales.map(&:to_s)
+        regular_locales = [/[a-z]{2}(?:[-_][A-Z]{2})?/]
+        locales = Regexp.union(available_locales + regular_locales)
         variants = "[^.]*"
 
         %r{
@@ -61,6 +63,11 @@ module ActionView
     # Normalizes the arguments and passes it on to find_templates.
     def find_all(name, prefix = nil, partial = false, details = {}, key = nil, locals = [])
       _find_all(name, prefix, partial, details, key, locals)
+    end
+
+    def built_templates # :nodoc:
+      # Used for error pages
+      []
     end
 
     def all_template_paths # :nodoc:
@@ -118,6 +125,10 @@ module ActionView
       end.uniq.map do |filename|
         TemplatePath.parse(filename)
       end
+    end
+
+    def built_templates # :nodoc:
+      @unbound_templates.values.flatten.flat_map(&:built_templates)
     end
 
     private

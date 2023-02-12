@@ -19,6 +19,10 @@ module ActionText
       #{root}/app/models
     )
 
+    initializer "action_text.deprecator", before: :load_environment_config do |app|
+      app.deprecators[:action_text] = ActionText.deprecator
+    end
+
     initializer "action_text.attribute" do
       ActiveSupport.on_load(:active_record) do
         include ActionText::Attribute
@@ -51,20 +55,16 @@ module ActionText
     end
 
     initializer "action_text.helper" do
-      %i[action_controller_base action_mailer].each do |abstract_controller|
-        ActiveSupport.on_load(abstract_controller) do
+      %i[action_controller_base action_mailer].each do |base|
+        ActiveSupport.on_load(base) do
           helper ActionText::Engine.helpers
         end
       end
     end
 
     initializer "action_text.renderer" do
-      ActiveSupport.on_load(:action_text_content) do
-        self.default_renderer = Class.new(ActionController::Base).renderer
-      end
-
-      %i[action_controller_base action_mailer].each do |abstract_controller|
-        ActiveSupport.on_load(abstract_controller) do
+      %i[action_controller_base action_mailer].each do |base|
+        ActiveSupport.on_load(base) do
           around_action do |controller, action|
             ActionText::Content.with_renderer(controller, &action)
           end

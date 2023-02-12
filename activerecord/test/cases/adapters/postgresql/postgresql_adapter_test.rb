@@ -4,6 +4,8 @@ require "cases/helper"
 require "support/ddl_helper"
 require "support/connection_helper"
 
+require "active_support/error_reporter/test_helper"
+
 module ActiveRecord
   module ConnectionAdapters
     class PostgreSQLAdapterTest < ActiveRecord::PostgreSQLTestCase
@@ -13,12 +15,12 @@ module ActiveRecord
 
       def setup
         @connection = ActiveRecord::Base.connection
-        @connection_handler = ActiveRecord::Base.connection_handler
+        @original_db_warnings_action = :ignore
       end
 
       def test_connection_error
         assert_raises ActiveRecord::ConnectionNotEstablished do
-          ActiveRecord::Base.postgresql_connection(host: File::NULL)
+          ActiveRecord::Base.postgresql_connection(host: File::NULL).connect!
         end
       end
 
@@ -38,8 +40,12 @@ module ActiveRecord
             {}
           end
 
+          def escape(query)
+            PG::Connection.escape(query)
+          end
+
           def reset
-            raise PG::ConnectionBad
+            raise PG::ConnectionBad, "I'll be rescued by the reconnect method"
           end
 
           def close
@@ -53,8 +59,13 @@ module ActiveRecord
           { host: File::NULL }
         )
 
-        assert_raises ActiveRecord::ConnectionNotEstablished do
-          @conn.reconnect!
+        connect_raises_error = proc { |**_conn_params| raise(PG::ConnectionBad, "actual bad connection error") }
+        PG.stub(:connect, connect_raises_error) do
+          error = assert_raises ActiveRecord::ConnectionNotEstablished do
+            @conn.reconnect!
+          end
+
+          assert_equal("actual bad connection error", error.message)
         end
       end
 
@@ -64,6 +75,18 @@ module ActiveRecord
           configuration = db_config.configuration_hash.merge(database: "should_not_exist-cinco-dog-db")
           connection = ActiveRecord::Base.postgresql_connection(configuration)
           connection.exec_query("SELECT 1")
+        end
+      end
+
+      def test_bad_connection_to_postgres_database
+        connect_raises_error = proc { |**_conn_params| raise(PG::ConnectionBad, 'FATAL:  database "postgres" does not exist') }
+        PG.stub(:connect, connect_raises_error) do
+          assert_raises ActiveRecord::ConnectionNotEstablished do
+            db_config = ActiveRecord::Base.configurations.configs_for(env_name: "arunit", name: "primary")
+            configuration = db_config.configuration_hash.merge(database: "postgres")
+            connection = ActiveRecord::Base.postgresql_connection(configuration)
+            connection.exec_query("SELECT 1")
+          end
         end
       end
 
@@ -313,6 +336,34 @@ module ActiveRecord
         end
       end
 
+      def test_invalid_index
+        with_example_table do
+          @connection.exec_query("INSERT INTO ex (number) VALUES (1), (1)")
+          error = assert_raises(ActiveRecord::RecordNotUnique) do
+            @connection.add_index(:ex, :number, unique: true, algorithm: :concurrently, name: :invalid_index)
+          end
+          assert_match(/could not create unique index/, error.message)
+
+          assert @connection.index_exists?(:ex, :number, name: :invalid_index)
+          assert_not @connection.index_exists?(:ex, :number, name: :invalid_index, valid: true)
+          assert @connection.index_exists?(:ex, :number, name: :invalid_index, valid: false)
+        end
+      end
+
+      def test_index_with_not_distinct_nulls
+        skip if ActiveRecord::Base.connection.database_version < 15_00_00
+
+        with_example_table do
+          @connection.execute(<<~SQL)
+            CREATE UNIQUE INDEX index_ex_on_data ON ex (data) NULLS NOT DISTINCT WHERE number > 0
+          SQL
+
+          index = @connection.indexes(:ex).first
+          assert_equal true, index.unique
+          assert_match("number", index.where)
+        end
+      end
+
       def test_columns_for_distinct_zero_orders
         assert_equal "posts.id",
           @connection.columns_for_distinct("posts.id", [])
@@ -374,12 +425,12 @@ module ActiveRecord
       end
 
       def test_reload_type_map_for_newly_defined_types
-        @connection.execute "CREATE TYPE feeling AS ENUM ('good', 'bad')"
+        @connection.create_enum "feeling", ["good", "bad"]
         result = @connection.select_all "SELECT 'good'::feeling"
         assert_instance_of(PostgreSQLAdapter::OID::Enum,
                            result.column_types["feeling"])
       ensure
-        @connection.execute "DROP TYPE IF EXISTS feeling"
+        @connection.drop_enum "feeling", if_exists: true
         reset_connection
       end
 
@@ -431,6 +482,115 @@ module ActiveRecord
           first_number.save!
           assert_equal 4, first_number.reload.number
         end
+      end
+
+      def test_only_check_for_insensitive_comparison_capability_once
+        @connection.execute("CREATE DOMAIN example_type AS integer")
+
+        with_example_table "id SERIAL PRIMARY KEY, number example_type" do
+          number_klass = Class.new(ActiveRecord::Base) do
+            self.table_name = "ex"
+          end
+          attribute = number_klass.arel_table[:number]
+          assert_queries :any, ignore_none: true do
+            @connection.case_insensitive_comparison(attribute, "foo")
+          end
+          assert_no_queries do
+            @connection.case_insensitive_comparison(attribute, "foo")
+          end
+        end
+      ensure
+        @connection.execute("DROP DOMAIN example_type")
+      end
+
+      def test_ignores_warnings_when_behaviour_ignore
+        ActiveRecord.db_warnings_action = :ignore
+
+        result = @connection.execute("do $$ BEGIN RAISE WARNING 'foo'; END; $$")
+
+        assert_equal [], result.to_a
+      ensure
+        ActiveRecord.db_warnings_action = @original_db_warnings_action
+      end
+
+      def test_logs_warnings_when_behaviour_log
+        ActiveRecord.db_warnings_action = :log
+
+        sql_warning = "[ActiveRecord::SQLWarning] PostgreSQL SQL warning (01000)"
+
+        assert_called_with(ActiveRecord::Base.logger, :warn, [sql_warning]) do
+          @connection.execute("do $$ BEGIN RAISE WARNING 'PostgreSQL SQL warning'; END; $$")
+        end
+      ensure
+        ActiveRecord.db_warnings_action = @original_db_warnings_action
+      end
+
+      def test_raises_warnings_when_behaviour_raise
+        ActiveRecord.db_warnings_action = :raise
+
+        assert_raises(ActiveRecord::SQLWarning) do
+          @connection.execute("do $$ BEGIN RAISE WARNING 'PostgreSQL SQL warning'; END; $$")
+        end
+      ensure
+        ActiveRecord.db_warnings_action = @original_db_warnings_action
+      end
+
+      def test_reports_when_behaviour_report
+        ActiveRecord.db_warnings_action = :report
+
+        error_reporter = ActiveSupport::ErrorReporter.new
+        subscriber = ActiveSupport::ErrorReporter::TestHelper::ErrorSubscriber.new
+
+        Rails.define_singleton_method(:error) { error_reporter }
+        Rails.error.subscribe(subscriber)
+
+        @connection.execute("do $$ BEGIN RAISE WARNING 'PostgreSQL SQL warning'; END; $$")
+        warning_event, * = subscriber.events.first
+
+        assert_kind_of ActiveRecord::SQLWarning, warning_event
+        assert_equal "PostgreSQL SQL warning", warning_event.message
+      ensure
+        Rails.singleton_class.remove_method(:error)
+        ActiveRecord.db_warnings_action = @original_db_warnings_action
+      end
+
+      def test_warnings_behaviour_can_be_customized_with_a_proc
+        warning_message = nil
+        warning_level = nil
+        ActiveRecord.db_warnings_action = ->(warning) do
+          warning_message = warning.message
+          warning_level = warning.level
+        end
+
+        @connection.execute("do $$ BEGIN RAISE WARNING 'PostgreSQL SQL warning'; END; $$")
+
+        assert_equal "PostgreSQL SQL warning", warning_message
+        assert_equal "WARNING", warning_level
+      ensure
+        ActiveRecord.db_warnings_action = @original_db_warnings_action
+      end
+
+      def test_allowlist_of_warnings_to_ignore
+        old_ignored_warnings = ActiveRecord.db_warnings_ignore
+        ActiveRecord.db_warnings_action = :raise
+        ActiveRecord.db_warnings_ignore = [/PostgreSQL SQL warning/]
+
+        result = @connection.execute("do $$ BEGIN RAISE WARNING 'PostgreSQL SQL warning'; END; $$")
+
+        assert_equal [], result.to_a
+      ensure
+        ActiveRecord.db_warnings_action = @original_db_warnings_action
+        ActiveRecord.db_warnings_ignore = old_ignored_warnings
+      end
+
+      def test_does_not_raise_notice_level_warnings
+        ActiveRecord.db_warnings_action = :raise
+
+        result = @connection.execute("DROP TABLE IF EXISTS non_existent_table")
+
+        assert_equal [], result.to_a
+      ensure
+        ActiveRecord.db_warnings_action = @original_db_warnings_action
       end
 
       private

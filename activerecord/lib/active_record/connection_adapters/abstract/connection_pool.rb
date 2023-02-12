@@ -31,12 +31,22 @@ module ActiveRecord
     class NullPool # :nodoc:
       include ConnectionAdapters::AbstractPool
 
+      class NullConfig # :nodoc:
+        def method_missing(*)
+          nil
+        end
+      end
+      NULL_CONFIG = NullConfig.new # :nodoc:
+
       attr_accessor :schema_cache
 
       def connection_class; end
       def checkin(_); end
       def remove(_); end
       def async_executor; end
+      def db_config
+        NULL_CONFIG
+      end
     end
 
     # Connection pool base class for managing Active Record database
@@ -53,7 +63,7 @@ module ActiveRecord
     # handle cases in which there are more threads than connections: if all
     # connections have been checked out, and a thread tries to checkout a
     # connection anyway, then ConnectionPool will wait until some other thread
-    # has checked in a connection.
+    # has checked in a connection, or the +checkout_timeout+ has expired.
     #
     # == Obtaining (checking out) a connection
     #
@@ -64,7 +74,7 @@ module ActiveRecord
     #    as with Active Record 2.1 and
     #    earlier (pre-connection-pooling). Eventually, when you're done with
     #    the connection(s) and wish it to be returned to the pool, you call
-    #    {ActiveRecord::Base.clear_active_connections!}[rdoc-ref:ConnectionAdapters::ConnectionHandler#clear_active_connections!].
+    #    {ActiveRecord::Base.connection_handler.clear_active_connections!}[rdoc-ref:ConnectionAdapters::ConnectionHandler#clear_active_connections!].
     #    This will be the default behavior for Active Record when used in conjunction with
     #    Action Pack's request handling cycle.
     # 2. Manually check out a connection from the pool with
@@ -77,6 +87,12 @@ module ActiveRecord
     #
     # Connections in the pool are actually AbstractAdapter objects (or objects
     # compatible with AbstractAdapter's interface).
+    #
+    # While a thread has a connection checked out from the pool using one of the
+    # above three methods, that connection will automatically be the one used
+    # by ActiveRecord queries executing on that thread. It is not required to
+    # explicitly pass the checked out connection to Rails models or queries, for
+    # example.
     #
     # == Options
     #
@@ -105,10 +121,8 @@ module ActiveRecord
       include ConnectionAdapters::AbstractPool
 
       attr_accessor :automatic_reconnect, :checkout_timeout
-      attr_reader :db_config, :size, :reaper, :pool_config, :connection_class, :async_executor, :role, :shard
+      attr_reader :db_config, :size, :reaper, :pool_config, :async_executor, :role, :shard
 
-      alias_method :connection_klass, :connection_class
-      deprecate :connection_klass
       delegate :schema_cache, :schema_cache=, to: :pool_config
 
       # Creates a new ConnectionPool object. +pool_config+ is a PoolConfig
@@ -122,7 +136,6 @@ module ActiveRecord
 
         @pool_config = pool_config
         @db_config = pool_config.db_config
-        @connection_class = pool_config.connection_class
         @role = pool_config.role
         @shard = pool_config.shard
 
@@ -166,9 +179,13 @@ module ActiveRecord
 
       def lock_thread=(lock_thread)
         if lock_thread
-          @lock_thread = Thread.current
+          @lock_thread = ActiveSupport::IsolatedExecutionState.context
         else
           @lock_thread = nil
+        end
+
+        if (active_connection = @thread_cached_conns[connection_cache_key(current_thread)])
+          active_connection.lock_thread = @lock_thread
         end
       end
 
@@ -180,6 +197,12 @@ module ActiveRecord
       def connection
         @thread_cached_conns[connection_cache_key(current_thread)] ||= checkout
       end
+
+      def connection_class # :nodoc:
+        pool_config.connection_class
+      end
+      alias :connection_klass :connection_class
+      deprecate :connection_klass, deprecator: ActiveRecord.deprecator
 
       # Returns true if there is an open connection being used for the current thread.
       #
@@ -197,18 +220,23 @@ module ActiveRecord
       # This method only works for connections that have been obtained through
       # #connection or #with_connection methods, connections obtained through
       # #checkout will not be automatically released.
-      def release_connection(owner_thread = Thread.current)
+      def release_connection(owner_thread = ActiveSupport::IsolatedExecutionState.context)
         if conn = @thread_cached_conns.delete(connection_cache_key(owner_thread))
           checkin conn
         end
       end
 
-      # If a connection obtained through #connection or #with_connection methods
-      # already exists yield it to the block. If no such connection
-      # exists checkout a connection, yield it to the block, and checkin the
-      # connection when finished.
+      # Yields a connection from the connection pool to the block. If no connection
+      # is already checked out by the current thread, a connection will be checked
+      # out from the pool, yielded to the block, and then returned to the pool when
+      # the block is finished. If a connection has already been checked out on the
+      # current thread, such as via #connection or #with_connection, that existing
+      # connection will be the one yielded and it will not be returned to the pool
+      # automatically at the end of the block; it is expected that such an existing
+      # connection will be properly returned to the pool by the code that checked
+      # it out.
       def with_connection
-        unless conn = @thread_cached_conns[connection_cache_key(Thread.current)]
+        unless conn = @thread_cached_conns[connection_cache_key(ActiveSupport::IsolatedExecutionState.context)]
           conn = connection
           fresh_connection = true
         end
@@ -338,7 +366,9 @@ module ActiveRecord
       # Raises:
       # - ActiveRecord::ConnectionTimeoutError no connection can be obtained from the pool.
       def checkout(checkout_timeout = @checkout_timeout)
-        checkout_and_verify(acquire_connection(checkout_timeout))
+        connection = checkout_and_verify(acquire_connection(checkout_timeout))
+        connection.lock_thread = @lock_thread
+        connection
       end
 
       # Check-in a database connection back into the pool, indicating that you
@@ -355,6 +385,7 @@ module ActiveRecord
               conn.expire
             end
 
+            conn.lock_thread = nil
             @available.add conn
           end
         end
@@ -510,7 +541,7 @@ module ActiveRecord
         end
 
         def current_thread
-          @lock_thread || Thread.current
+          @lock_thread || ActiveSupport::IsolatedExecutionState.context
         end
 
         # Take control of all existing connections so a "group" action such as
@@ -527,13 +558,13 @@ module ActiveRecord
         def attempt_to_checkout_all_existing_connections(raise_on_acquisition_timeout = true)
           collected_conns = synchronize do
             # account for our own connections
-            @connections.select { |conn| conn.owner == Thread.current }
+            @connections.select { |conn| conn.owner == ActiveSupport::IsolatedExecutionState.context }
           end
 
           newly_checked_out = []
           timeout_time      = Process.clock_gettime(Process::CLOCK_MONOTONIC) + (@checkout_timeout * 2)
 
-          @available.with_a_bias_for(Thread.current) do
+          @available.with_a_bias_for(ActiveSupport::IsolatedExecutionState.context) do
             loop do
               synchronize do
                 return if collected_conns.size == @connections.size && @now_connecting == 0
@@ -580,7 +611,7 @@ module ActiveRecord
 
           thread_report = []
           @connections.each do |conn|
-            unless conn.owner == Thread.current
+            unless conn.owner == ActiveSupport::IsolatedExecutionState.context
               thread_report << "#{conn} is owned by #{conn.owner}"
             end
           end
@@ -702,7 +733,7 @@ module ActiveRecord
 
         def checkout_and_verify(c)
           c._run_checkout_callbacks do
-            c.verify!
+            c.clean!
           end
           c
         rescue

@@ -1,122 +1,7 @@
 # frozen_string_literal: true
 
-require "erb"
-require "active_support/core_ext/module/redefine_method"
+require "active_support/core_ext/erb/util"
 require "active_support/multibyte/unicode"
-
-class ERB
-  module Util
-    HTML_ESCAPE = { "&" => "&amp;",  ">" => "&gt;",   "<" => "&lt;", '"' => "&quot;", "'" => "&#39;" }
-    JSON_ESCAPE = { "&" => '\u0026', ">" => '\u003e', "<" => '\u003c', "\u2028" => '\u2028', "\u2029" => '\u2029' }
-    HTML_ESCAPE_ONCE_REGEXP = /["><']|&(?!([a-zA-Z]+|(#\d+)|(#[xX][\dA-Fa-f]+));)/
-    JSON_ESCAPE_REGEXP = /[\u2028\u2029&><]/u
-
-    # A utility method for escaping HTML tag characters.
-    # This method is also aliased as <tt>h</tt>.
-    #
-    #   puts html_escape('is a > 0 & a < 10?')
-    #   # => is a &gt; 0 &amp; a &lt; 10?
-    def html_escape(s)
-      unwrapped_html_escape(s).html_safe
-    end
-
-    silence_redefinition_of_method :h
-    alias h html_escape
-
-    module_function :h
-
-    singleton_class.silence_redefinition_of_method :html_escape
-    module_function :html_escape
-
-    # HTML escapes strings but doesn't wrap them with an ActiveSupport::SafeBuffer.
-    # This method is not for public consumption! Seriously!
-    def unwrapped_html_escape(s) # :nodoc:
-      s = s.to_s
-      if s.html_safe?
-        s
-      else
-        CGI.escapeHTML(ActiveSupport::Multibyte::Unicode.tidy_bytes(s))
-      end
-    end
-    module_function :unwrapped_html_escape
-
-    # A utility method for escaping HTML without affecting existing escaped entities.
-    #
-    #   html_escape_once('1 < 2 &amp; 3')
-    #   # => "1 &lt; 2 &amp; 3"
-    #
-    #   html_escape_once('&lt;&lt; Accept & Checkout')
-    #   # => "&lt;&lt; Accept &amp; Checkout"
-    def html_escape_once(s)
-      result = ActiveSupport::Multibyte::Unicode.tidy_bytes(s.to_s).gsub(HTML_ESCAPE_ONCE_REGEXP, HTML_ESCAPE)
-      s.html_safe? ? result.html_safe : result
-    end
-
-    module_function :html_escape_once
-
-    # A utility method for escaping HTML entities in JSON strings. Specifically, the
-    # &, > and < characters are replaced with their equivalent unicode escaped form -
-    # \u0026, \u003e, and \u003c. The Unicode sequences \u2028 and \u2029 are also
-    # escaped as they are treated as newline characters in some JavaScript engines.
-    # These sequences have identical meaning as the original characters inside the
-    # context of a JSON string, so assuming the input is a valid and well-formed
-    # JSON value, the output will have equivalent meaning when parsed:
-    #
-    #   json = JSON.generate({ name: "</script><script>alert('PWNED!!!')</script>"})
-    #   # => "{\"name\":\"</script><script>alert('PWNED!!!')</script>\"}"
-    #
-    #   json_escape(json)
-    #   # => "{\"name\":\"\\u003C/script\\u003E\\u003Cscript\\u003Ealert('PWNED!!!')\\u003C/script\\u003E\"}"
-    #
-    #   JSON.parse(json) == JSON.parse(json_escape(json))
-    #   # => true
-    #
-    # The intended use case for this method is to escape JSON strings before including
-    # them inside a script tag to avoid XSS vulnerability:
-    #
-    #   <script>
-    #     var currentUser = <%= raw json_escape(current_user.to_json) %>;
-    #   </script>
-    #
-    # It is necessary to +raw+ the result of +json_escape+, so that quotation marks
-    # don't get converted to <tt>&quot;</tt> entities. +json_escape+ doesn't
-    # automatically flag the result as HTML safe, since the raw value is unsafe to
-    # use inside HTML attributes.
-    #
-    # If your JSON is being used downstream for insertion into the DOM, be aware of
-    # whether or not it is being inserted via <tt>html()</tt>. Most jQuery plugins do this.
-    # If that is the case, be sure to +html_escape+ or +sanitize+ any user-generated
-    # content returned by your JSON.
-    #
-    # If you need to output JSON elsewhere in your HTML, you can just do something
-    # like this, as any unsafe characters (including quotation marks) will be
-    # automatically escaped for you:
-    #
-    #   <div data-user-info="<%= current_user.to_json %>">...</div>
-    #
-    # WARNING: this helper only works with valid JSON. Using this on non-JSON values
-    # will open up serious XSS vulnerabilities. For example, if you replace the
-    # +current_user.to_json+ in the example above with user input instead, the browser
-    # will happily eval() that string as JavaScript.
-    #
-    # The escaping performed in this method is identical to those performed in the
-    # Active Support JSON encoder when +ActiveSupport.escape_html_entities_in_json+ is
-    # set to true. Because this transformation is idempotent, this helper can be
-    # applied even if +ActiveSupport.escape_html_entities_in_json+ is already true.
-    #
-    # Therefore, when you are unsure if +ActiveSupport.escape_html_entities_in_json+
-    # is enabled, or if you are unsure where your JSON string originated from, it
-    # is recommended that you always apply this helper (other libraries, such as the
-    # JSON gem, do not provide this kind of protection by default; also some gems
-    # might override +to_json+ to bypass Active Support's encoder).
-    def json_escape(s)
-      result = s.to_s.gsub(JSON_ESCAPE_REGEXP, JSON_ESCAPE)
-      s.html_safe? ? result.html_safe : result
-    end
-
-    module_function :json_escape
-  end
-end
 
 class Object
   def html_safe?
@@ -134,7 +19,7 @@ module ActiveSupport # :nodoc:
   class SafeBuffer < String
     UNSAFE_STRING_METHODS = %w(
       capitalize chomp chop delete delete_prefix delete_suffix
-      downcase lstrip next reverse rstrip scrub slice squeeze strip
+      downcase lstrip next reverse rstrip scrub squeeze strip
       succ swapcase tr tr_s unicode_normalize upcase
     )
 
@@ -143,10 +28,10 @@ module ActiveSupport # :nodoc:
     alias_method :original_concat, :concat
     private :original_concat
 
-    # Raised when <tt>ActiveSupport::SafeBuffer#safe_concat</tt> is called on unsafe buffers.
+    # Raised when ActiveSupport::SafeBuffer#safe_concat is called on unsafe buffers.
     class SafeConcatError < StandardError
       def initialize
-        super "Could not concatenate to the buffer because it is not html safe."
+        super "Could not concatenate to the buffer because it is not HTML safe."
       end
     end
 
@@ -156,12 +41,25 @@ module ActiveSupport # :nodoc:
 
         return unless new_string
 
-        new_safe_buffer = new_string.is_a?(SafeBuffer) ? new_string : SafeBuffer.new(new_string)
-        new_safe_buffer.instance_variable_set :@html_safe, true
-        new_safe_buffer
+        string_into_safe_buffer(new_string, true)
       else
         to_str[*args]
       end
+    end
+    alias_method :slice, :[]
+
+    def slice!(*args)
+      new_string = super
+
+      return new_string if !html_safe? || new_string.nil?
+
+      string_into_safe_buffer(new_string, true)
+    end
+
+    def chr
+      return super unless html_safe?
+
+      string_into_safe_buffer(super, true)
     end
 
     def safe_concat(value)
@@ -203,11 +101,11 @@ module ActiveSupport # :nodoc:
       super(implicit_html_escape_interpolated_argument(value))
     end
 
-    def []=(*args)
-      if args.length == 3
-        super(args[0], args[1], implicit_html_escape_interpolated_argument(args[2]))
+    def []=(arg1, arg2, arg3 = nil)
+      if arg3
+        super(arg1, arg2, implicit_html_escape_interpolated_argument(arg3))
       else
-        super(args[0], implicit_html_escape_interpolated_argument(args[1]))
+        super(arg1, implicit_html_escape_interpolated_argument(arg2))
       end
     end
 
@@ -215,7 +113,7 @@ module ActiveSupport # :nodoc:
       dup.concat(other)
     end
 
-    def *(*)
+    def *(_)
       new_string = super
       new_safe_buffer = new_string.is_a?(SafeBuffer) ? new_string : SafeBuffer.new(new_string)
       new_safe_buffer.instance_variable_set(:@html_safe, @html_safe)
@@ -233,9 +131,9 @@ module ActiveSupport # :nodoc:
       self.class.new(super(escaped_args))
     end
 
-    def html_safe?
-      defined?(@html_safe) && @html_safe
-    end
+    attr_reader :html_safe
+    alias_method :html_safe?, :html_safe
+    remove_method :html_safe
 
     def to_s
       self
@@ -305,7 +203,7 @@ module ActiveSupport # :nodoc:
           rescue NoMethodError => error
             if error.name == :to_str
               str = arg.to_s
-              ActiveSupport::Deprecation.warn <<~MSG.squish
+              ActiveSupport.deprecator.warn <<~MSG.squish
                 Implicit conversion of #{arg.class} into String by ActiveSupport::SafeBuffer
                 is deprecated and will be removed in Rails 7.1.
                 You must explicitly cast it to a String.
@@ -323,6 +221,12 @@ module ActiveSupport # :nodoc:
         block.binding.eval("proc { |m| $~ = m }").call(match_data)
       rescue ArgumentError
         # Can't create binding from C level Proc
+      end
+
+      def string_into_safe_buffer(new_string, is_html_safe)
+        new_safe_buffer = new_string.is_a?(SafeBuffer) ? new_string : SafeBuffer.new(new_string)
+        new_safe_buffer.instance_variable_set :@html_safe, is_html_safe
+        new_safe_buffer
       end
   end
 end

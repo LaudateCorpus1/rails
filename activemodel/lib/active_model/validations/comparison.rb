@@ -1,11 +1,13 @@
 # frozen_string_literal: true
 
 require "active_model/validations/comparability"
+require "active_model/validations/resolve_value"
 
 module ActiveModel
   module Validations
     class ComparisonValidator < EachValidator # :nodoc:
       include Comparability
+      include ResolveValue
 
       def check_validity!
         unless (options.keys & COMPARE_CHECKS.keys).any?
@@ -16,7 +18,7 @@ module ActiveModel
 
       def validate_each(record, attr_name, value)
         options.slice(*COMPARE_CHECKS.keys).each do |option, raw_option_value|
-          option_value = option_value(record, raw_option_value)
+          option_value = resolve_value(record, raw_option_value)
 
           if value.nil? || value.blank?
             return record.errors.add(attr_name, :blank, **error_options(value, option_value))
@@ -42,21 +44,27 @@ module ActiveModel
       # Configuration options:
       # * <tt>:message</tt> - A custom error message (default is: "failed comparison").
       # * <tt>:greater_than</tt> - Specifies the value must be greater than the
-      #   supplied value.
+      #   supplied value. The default error message for this option is _"must be
+      #   greater than %{count}"_.
       # * <tt>:greater_than_or_equal_to</tt> - Specifies the value must be
-      #   greater than or equal to the supplied value.
+      #   greater than or equal to the supplied value. The default error message
+      #   for this option is _"must be greater than or equal to %{count}"_.
       # * <tt>:equal_to</tt> - Specifies the value must be equal to the supplied
-      #   value.
+      #   value. The default error message for this option is _"must be equal to
+      #   %{count}"_.
       # * <tt>:less_than</tt> - Specifies the value must be less than the
-      #   supplied value.
+      #   supplied value. The default error message for this option is _"must be
+      #   less than %{count}"_.
       # * <tt>:less_than_or_equal_to</tt> - Specifies the value must be less
-      #   than or equal to the supplied value.
+      #   than or equal to the supplied value. The default error message for
+      #   this option is _"must be less than or equal to %{count}"_.
       # * <tt>:other_than</tt> - Specifies the value must not be equal to the
-      #   supplied value.
+      #   supplied value. The default error message for this option is _"must be
+      #   other than %{count}"_.
       #
       # There is also a list of default options supported by every validator:
       # +:if+, +:unless+, +:on+, +:allow_nil+, +:allow_blank+, and +:strict+ .
-      # See <tt>ActiveModel::Validations#validates</tt> for more information
+      # See ActiveModel::Validations::ClassMethods#validates for more information.
       #
       # The validator requires at least one of the following checks to be supplied.
       # Each will accept a proc, value, or a symbol which corresponds to a method:

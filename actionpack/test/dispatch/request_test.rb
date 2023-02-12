@@ -609,32 +609,66 @@ class RequestParamsParsing < BaseRequestTest
     request = stub_request("REQUEST_URI" => "foo")
     assert_equal({}, request.query_parameters)
   end
-end
 
-class RequestRewind < BaseRequestTest
-  test "body should be rewound" do
-    data = "rewind"
-    env = {
-      "rack.input" => StringIO.new(data),
-      "CONTENT_LENGTH" => data.length,
-      "CONTENT_TYPE" => "application/x-www-form-urlencoded; charset=utf-8"
-    }
+  # partially mimics https://github.com/rack/rack/blob/249dd785625f0cbe617d3144401de90ecf77025a/test/spec_multipart.rb#L114
+  test "request_parameters raises BadRequest when content length lower than actual data length for a multipart request" do
+    request = stub_request(
+      "CONTENT_TYPE" => "multipart/form-data; boundary=AaB03x",
+      "CONTENT_LENGTH" => "9", # lower than data length
+      "REQUEST_METHOD" => "POST",
+      "rack.input" => StringIO.new("0123456789")
+    )
 
-    # Read the request body by parsing params.
-    request = stub_request(env)
-    request.request_parameters
+    err = assert_raises(ActionController::BadRequest) do
+      request.request_parameters
+    end
 
-    # Should have rewound the body.
-    assert_equal 0, request.body.pos
+    # original error message is Rack::Multipart::EmptyContentError for rack > 3 otherwise EOFError
+    assert_match "Invalid request parameters:", err.message
   end
 
-  test "raw_post rewinds rack.input if RAW_POST_DATA is nil" do
+  test "request_parameters raises BadRequest when content length is higher than actual data length" do
     request = stub_request(
-      "rack.input" => StringIO.new("raw"),
-      "CONTENT_LENGTH" => 3
+      "CONTENT_TYPE" => "multipart/form-data; boundary=AaB03x",
+      "CONTENT_LENGTH" => "11", # higher than data length
+      "REQUEST_METHOD" => "POST",
+      "rack.input" => StringIO.new("0123456789")
     )
-    assert_equal "raw", request.raw_post
-    assert_equal "raw", request.env["rack.input"].read
+
+    err = assert_raises(ActionController::BadRequest) do
+      request.request_parameters
+    end
+
+    assert_equal "Invalid request parameters: bad content body", err.message
+  end
+end
+
+if Rack.release < "3"
+  class RequestRewind < BaseRequestTest
+    test "body should be rewound" do
+      data = "rewind"
+      env = {
+        "rack.input" => StringIO.new(data),
+        "CONTENT_LENGTH" => data.length,
+        "CONTENT_TYPE" => "application/x-www-form-urlencoded; charset=utf-8"
+      }
+
+      # Read the request body by parsing params.
+      request = stub_request(env)
+      request.request_parameters
+
+      # Should have rewound the body.
+      assert_equal 0, request.body.pos
+    end
+
+    test "raw_post rewinds rack.input if RAW_POST_DATA is nil" do
+      request = stub_request(
+        "rack.input" => StringIO.new("raw"),
+        "CONTENT_LENGTH" => 3
+      )
+      assert_equal "raw", request.raw_post
+      assert_equal "raw", request.env["rack.input"].read
+    end
   end
 end
 
@@ -781,6 +815,14 @@ class RequestMethod < BaseRequestTest
         inflect.instance_variable_set :@acronyms, existing_acronyms
         inflect.send(:define_acronym_regex_patterns)
       end
+    end
+  end
+
+  test "delegates to Object#method if an argument is passed" do
+    request = stub_request
+
+    assert_nothing_raised do
+      request.method(:POST)
     end
   end
 end
@@ -1007,13 +1049,13 @@ class RequestMimeType < BaseRequestTest
 
     assert_equal(Mime[:xml], request.content_mime_type)
     assert_equal("application/xml", request.media_type)
-    assert_deprecated do
+    assert_deprecated(ActionDispatch.deprecator) do
       assert_nil(request.content_charset)
     end
-    assert_deprecated do
+    assert_deprecated(ActionDispatch.deprecator) do
       assert_equal({}, request.media_type_params)
     end
-    assert_deprecated do
+    assert_deprecated(ActionDispatch.deprecator) do
       assert_equal("application/xml", request.content_type)
     end
   ensure
@@ -1079,19 +1121,31 @@ class RequestParameters < BaseRequestTest
     assert_equal "Invalid path parameters: Invalid encoding for parameter: �", err.message
   end
 
-  test "parameters not accessible after rack parse error of invalid UTF8 character" do
-    request = stub_request("QUERY_STRING" => "foo%81E=1")
-    assert_raises(ActionController::BadRequest) { request.parameters }
+  test "path parameters don't re-encode frozen strings" do
+    request = stub_request
+
+    ActionDispatch::Request::Utils::CustomParamEncoder.stub(:action_encoding_template, Hash.new { Encoding::BINARY }) do
+      request.path_parameters = { foo: "frozen", bar: +"mutable", controller: "test_controller" }
+      assert_equal Encoding::BINARY, request.params[:bar].encoding
+      assert_equal Encoding::UTF_8, request.params[:foo].encoding
+    end
   end
 
-  test "parameters containing an invalid UTF8 character" do
-    request = stub_request("QUERY_STRING" => "foo=%81E")
-    assert_raises(ActionController::BadRequest) { request.parameters }
-  end
+  if Rack.release < "3"
+    test "parameters not accessible after rack parse error of invalid UTF8 character" do
+      request = stub_request("QUERY_STRING" => "foo%81E=1")
+      assert_raises(ActionController::BadRequest) { request.parameters }
+    end
 
-  test "parameters containing a deeply nested invalid UTF8 character" do
-    request = stub_request("QUERY_STRING" => "foo[bar]=%81E")
-    assert_raises(ActionController::BadRequest) { request.parameters }
+    test "parameters containing an invalid UTF8 character" do
+      request = stub_request("QUERY_STRING" => "foo=%81E")
+      assert_raises(ActionController::BadRequest) { request.parameters }
+    end
+
+    test "parameters containing a deeply nested invalid UTF8 character" do
+      request = stub_request("QUERY_STRING" => "foo[bar]=%81E")
+      assert_raises(ActionController::BadRequest) { request.parameters }
+    end
   end
 
   test "POST parameters containing invalid UTF8 character" do
@@ -1236,6 +1290,18 @@ class RequestParameterFilter < BaseRequestTest
     path = request.filtered_path
     assert_equal request.script_name + "/authenticate?secret", path
   end
+
+  test "parameter_filter returns the same instance of ActiveSupport::ParameterFilter" do
+    request = stub_request(
+      "action_dispatch.parameter_filter" => [:secret]
+    )
+
+    filter = request.parameter_filter
+
+    assert_kind_of ActiveSupport::ParameterFilter, filter
+    assert_equal({ "secret" => "[FILTERED]", "something" => "bar" }, filter.filter("secret" => "foo", "something" => "bar"))
+    assert_same filter, request.parameter_filter
+  end
 end
 
 class RequestEtag < BaseRequestTest
@@ -1279,7 +1345,7 @@ class RequestEtag < BaseRequestTest
     assert_equal header, request.if_none_match
     assert_equal expected, request.if_none_match_etags
     expected.each do |etag|
-      assert request.etag_matches?(etag), etag
+      assert request.etag_matches?(etag), "Etag #{etag} did not match HTTP_IF_NONE_MATCH values"
     end
   end
 end

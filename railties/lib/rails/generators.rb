@@ -1,8 +1,5 @@
 # frozen_string_literal: true
 
-activesupport_path = File.expand_path("../../../activesupport/lib", __dir__)
-$:.unshift(activesupport_path) if File.directory?(activesupport_path) && !$:.include?(activesupport_path)
-
 require "thor/group"
 require "rails/command"
 
@@ -33,7 +30,7 @@ module Rails
       rails: {
         actions: "-a",
         orm: "-o",
-        javascripts: "-j",
+        javascripts: ["-j", "--js"],
         resource_controller: "-c",
         scaffold_controller: "-c",
         stylesheets: "-y",
@@ -253,8 +250,8 @@ module Rails
         invoke_fallbacks_for(name, base) || invoke_fallbacks_for(context, name)
       end
 
-      # Receives a namespace, arguments and the behavior to invoke the generator.
-      # It's used as the default entry point for generate, destroy and update
+      # Receives a namespace, arguments, and the behavior to invoke the generator.
+      # It's used as the default entry point for generate, destroy, and update
       # commands.
       def invoke(namespace, args = ARGV, config = {})
         names = namespace.to_s.split(":")
@@ -264,10 +261,10 @@ module Rails
           run_after_generate_callback if config[:behavior] == :invoke
         else
           options = sorted_groups.flat_map(&:last)
-          error   = Command::Base::CorrectableError.new("Could not find generator '#{namespace}'.", namespace, options)
+          error = Command::CorrectableNameError.new("Could not find generator '#{namespace}'.", namespace, options)
 
           puts <<~MSG
-            #{error.message}
+            #{error.detailed_message}
             Run `bin/rails generate --help` for more options.
           MSG
         end

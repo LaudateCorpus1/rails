@@ -1,54 +1,68 @@
-*   The Action Cable client now ensures successful channel subscriptions:
+*   Display broadcasted messages on error message when using `assert_broadcast_on`
 
-    * The client maintains a set of pending subscriptions until either
-      the server confirms the subscription or the channel is torn down.
-    * Rectifies the race condition where an unsubscribe is rapidly followed
-      by a subscribe (on the same channel identifier) and the requests are
-      handled out of order by the ActionCable server, thereby ignoring the
-      subscribe command.
+    *Stéphane Robino*
 
-    *Daniel Spinosa*
+*   The Action Cable client now supports subprotocols to allow passing arbitrary data
+    to the server.
 
+    ```js
+    const consumer = ActionCable.createConsumer()
 
-## Rails 7.0.0.alpha2 (September 15, 2021) ##
+    consumer.addSubProtocol('custom-protocol')
 
-*   No changes.
+    consumer.connect()
+    ```
 
+    See also:
 
-## Rails 7.0.0.alpha1 (September 15, 2021) ##
+    * https://developer.mozilla.org/en-US/docs/Web/API/WebSockets_API/Writing_WebSocket_servers#subprotocols
 
-*   Compile ESM package that can be used directly in the browser as actioncable.esm.js.
+    *Guillaume Hain*
 
-    *DHH*
+*   Redis pub/sub adapter now automatically reconnects when Redis connection is lost.
 
-*   Move action_cable.js to actioncable.js to match naming convention used for other Rails frameworks, and use JS console to communicate the deprecation.
+    *Vladimir Dementyev*
 
-    *DHH*
+*   The `connected()` callback can now take a `{reconnected}` parameter to differentiate
+    connections from reconnections.
 
-*   Stop transpiling the UMD package generated as actioncable.js and drop the IE11 testing that relied on that.
+    ```js
+    import consumer from "./consumer"
 
-    *DHH*
+    consumer.subscriptions.create("ExampleChannel", {
+      connected({reconnected}) {
+        if (reconnected) {
+          ...
+        } else {
+          ...
+        }
+      }
+    })
+    ```
 
-*   Truncate broadcast logging messages.
+    *Mansa Keïta*
 
-    *J Smith*
+*   The Redis adapter is now compatible with redis-rb 5.0
 
-*   OpenSSL constants are now used for Digest computations.
+    Compatibility with redis-rb 3.x was dropped.
 
-    *Dirkjan Bussink*
+    *Jean Boussier*
 
-*   The Action Cable client now includes safeguards to prevent a "thundering
-    herd" of client reconnects after server connectivity loss:
+*   The Action Cable server is now mounted with `anchor: true`.
 
-    * The client will wait a random amount between 1x and 3x of the stale
-      threshold after the server's last ping before making the first
-      reconnection attempt.
-    * Subsequent reconnection attempts now use exponential backoff instead of
-      logarithmic backoff.  To allow the delay between reconnection attempts to
-      increase slowly at first, the default exponentiation base is < 2.
-    * Random jitter is applied to each delay between reconnection attempts.
+    This means that routes that also start with `/cable` will no longer clash with Action Cable.
 
-    *Jonathan Hefner*
+    *Alex Ghiculescu*
 
+*   `ActionCable.server.remote_connections.where(...).disconnect` now sends `disconnect` message
+    before closing the connection with the reconnection strategy specified (defaults to `true`).
 
-Please check [6-1-stable](https://github.com/rails/rails/blob/6-1-stable/actioncable/CHANGELOG.md) for previous changes.
+    *Vladimir Dementyev*
+
+*   Added command callbacks to `ActionCable::Connection::Base`.
+
+    Now you can define `before_command`, `after_command`, and `around_command` to be invoked before, after or around any command received by a client respectively.
+
+    *Vladimir Dementyev*
+
+Please check [7-0-stable](https://github.com/rails/rails/blob/7-0-stable/actioncable/CHANGELOG.md) for previous changes.

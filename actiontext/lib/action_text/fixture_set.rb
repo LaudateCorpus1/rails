@@ -4,8 +4,7 @@ module ActionText
   # Fixtures are a way of organizing data that you want to test against; in
   # short, sample data.
   #
-  # To learn more about fixtures, read the
-  # {ActiveRecord::FixtureSet}[rdoc-ref:ActiveRecord::FixtureSet] documentation.
+  # To learn more about fixtures, read the ActiveRecord::FixtureSet documentation.
   #
   # === YAML
   #
@@ -25,7 +24,7 @@ module ActionText
   #   first:
   #     title: An Article
   #
-  # Then declare the <tt>ActionText::RichText</tt> fixture data in
+  # Then declare the ActionText::RichText fixture data in
   # <tt>test/fixtures/action_text/rich_texts.yml</tt>, making sure to declare
   # each entry's <tt>record:</tt> key as a polymorphic relationship:
   #

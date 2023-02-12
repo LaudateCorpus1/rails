@@ -119,7 +119,7 @@ module ActiveRecord
       def concat(*records)
         records = records.flatten
         if owner.new_record?
-          load_target
+          skip_strict_loading { load_target }
           concat_records(records)
         else
           transaction { concat_records(records) }
@@ -180,7 +180,7 @@ module ActiveRecord
       end
 
       # Deletes the +records+ and removes them from this association calling
-      # +before_remove+ , +after_remove+ , +before_destroy+ and +after_destroy+ callbacks.
+      # +before_remove+, +after_remove+, +before_destroy+ and +after_destroy+ callbacks.
       #
       # Note that this method removes records from the database ignoring the
       # +:dependent+ option.
@@ -233,7 +233,7 @@ module ActiveRecord
       # and delete/add only records that have changed.
       def replace(other_array)
         other_array.each { |val| raise_on_type_mismatch!(val) }
-        original_target = load_target.dup
+        original_target = skip_strict_loading { load_target }.dup
 
         if owner.new_record?
           replace_records(other_array, original_target)
@@ -320,13 +320,12 @@ module ActiveRecord
         #   * Otherwise, attributes should have the value found in the database
         def merge_target_lists(persisted, memory)
           return persisted if memory.empty?
-          return memory    if persisted.empty?
 
           persisted.map! do |record|
             if mem_record = memory.delete(record)
 
-              ((record.attribute_names & mem_record.attribute_names) - mem_record.changed_attribute_names_to_save).each do |name|
-                mem_record[name] = record[name]
+              ((record.attribute_names & mem_record.attribute_names) - mem_record.changed_attribute_names_to_save - mem_record.class._attr_readonly).each do |name|
+                mem_record._write_attribute(name, record[name])
               end
 
               mem_record

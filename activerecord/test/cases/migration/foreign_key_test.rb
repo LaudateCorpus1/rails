@@ -184,7 +184,8 @@ if ActiveRecord::Base.connection.supports_foreign_keys?
 
           @connection.create_table "astronauts", force: true do |t|
             t.string :name
-            t.references :rocket
+            t.references :rocket, type: :bigint
+            t.references :favorite_rocket
           end
         end
 
@@ -231,6 +232,16 @@ if ActiveRecord::Base.connection.supports_foreign_keys?
           assert_equal "rocket_id", fk.column
           assert_equal "id", fk.primary_key
           assert_equal "fk_rails_78146ddd2e", fk.name unless current_adapter?(:SQLite3Adapter)
+        end
+
+        def test_add_foreign_key_with_if_not_exists_to_already_referenced_table
+          @connection.add_foreign_key :astronauts, :rockets
+          @connection.add_foreign_key :astronauts, :rockets, column: "favorite_rocket_id", if_not_exists: true
+
+          foreign_keys = @connection.foreign_keys("astronauts")
+          assert_equal 2, foreign_keys.size
+          assert foreign_keys.all? { |fk| fk.to_table == "rockets" }
+          assert_equal ["favorite_rocket_id", "rocket_id"], foreign_keys.map(&:column).sort
         end
 
         def test_add_foreign_key_with_non_standard_primary_key
@@ -467,6 +478,22 @@ if ActiveRecord::Base.connection.supports_foreign_keys?
             @connection.validate_constraint :astronauts, "fancy_named_fk"
             assert_predicate @connection.foreign_keys("astronauts").first, :validated?
           end
+
+          def test_schema_dumping_with_validate_false
+            @connection.add_foreign_key :astronauts, :rockets, column: "rocket_id", validate: false
+
+            output = dump_table_schema "astronauts"
+
+            assert_match %r{\s+add_foreign_key "astronauts", "rockets", validate: false$}, output
+          end
+
+          def test_schema_dumping_with_validate_true
+            @connection.add_foreign_key :astronauts, :rockets, column: "rocket_id", validate: true
+
+            output = dump_table_schema "astronauts"
+
+            assert_match %r{\s+add_foreign_key "astronauts", "rockets"$}, output
+          end
         else
           # Foreign key should still be created, but should not be invalid
           def test_add_invalid_foreign_key
@@ -552,6 +579,28 @@ if ActiveRecord::Base.connection.supports_foreign_keys?
 
             assert_match %r{\s+add_foreign_key "astronauts", "rockets", deferrable: true$}, output
           end
+        end
+
+        def test_does_not_create_foreign_keys_when_bypassed_by_config
+          require "active_record/connection_adapters/sqlite3_adapter"
+          connection = ActiveRecord::Base.sqlite3_connection(
+            adapter: "sqlite3",
+            database: ":memory:",
+            foreign_keys: false,
+          )
+
+          connection.create_table "rockets", force: true do |t|
+            t.string :name
+          end
+          connection.create_table "astronauts", force: true do |t|
+            t.string :name
+            t.references :rocket
+          end
+
+          connection.add_foreign_key :astronauts, :rockets
+
+          foreign_keys = connection.foreign_keys("astronauts")
+          assert_equal 0, foreign_keys.size
         end
 
         def test_schema_dumping
@@ -668,7 +717,7 @@ if ActiveRecord::Base.connection.supports_foreign_keys?
           @connection.add_foreign_key :astronauts, :rockets
           assert_equal 1, @connection.foreign_keys("astronauts").size
 
-          @connection.remove_foreign_key :astronauts, :rockets
+          @connection.remove_foreign_key :astronauts, :rockets, if_exists: true
           assert_equal [], @connection.foreign_keys("astronauts")
 
           assert_nothing_raised do
@@ -694,6 +743,8 @@ if ActiveRecord::Base.connection.supports_foreign_keys?
                 assert_match(/Duplicate key on write or update/, error.message)
               elsif ActiveRecord::Base.connection.database_version < "5.6"
                 assert_match(/Can't create table/, error.message)
+              elsif ActiveRecord::Base.connection.database_version < "8.0"
+                assert_match(/Can't write; duplicate key in table/, error.message)
               else
                 assert_match(/Duplicate foreign key constraint name/, error.message)
               end
@@ -712,6 +763,17 @@ if ActiveRecord::Base.connection.supports_foreign_keys?
             @connection.add_foreign_key :astronauts, :rockets, if_not_exists: true
           end
         end
+
+        def test_add_foreign_key_preserves_existing_column_types
+          assert_no_changes -> { column_for(:astronauts, :rocket_id).bigint? }, from: true do
+            @connection.add_foreign_key :astronauts, :rockets
+          end
+        end
+
+        private
+          def column_for(table_name, column_name)
+            @connection.columns(table_name).find { |column| column.name == column_name.to_s }
+          end
       end
     end
   end

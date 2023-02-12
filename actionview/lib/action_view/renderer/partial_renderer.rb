@@ -27,7 +27,7 @@ module ActionView
   # This would first render <tt>advertiser/_account.html.erb</tt> with <tt>@buyer</tt> passed in as the local variable +account+, then
   # render <tt>advertiser/_ad.html.erb</tt> and pass the local variable +ad+ to the template for display.
   #
-  # == The :as and :object options
+  # == The +:as+ and +:object+ options
   #
   # By default ActionView::PartialRenderer doesn't have any local variables.
   # The <tt>:object</tt> option can be used to pass an object to the partial. For instance:
@@ -246,7 +246,8 @@ module ActionView
         ActiveSupport::Notifications.instrument(
           "render_partial.action_view",
           identifier: template.identifier,
-          layout: layout && layout.virtual_path
+          layout: layout && layout.virtual_path,
+          locals: locals
         ) do |payload|
           content = template.render(view, locals, add_to_stack: !block) do |*name|
             view._layout_for(*name, &block)

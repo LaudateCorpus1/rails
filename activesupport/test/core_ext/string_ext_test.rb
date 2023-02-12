@@ -90,6 +90,18 @@ class StringInflectionsTest < ActiveSupport::TestCase
     end
   end
 
+  def test_downcase_first
+    assert_equal "try again", "Try again".downcase_first
+  end
+
+  def test_downcase_first_with_one_char
+    assert_equal "t", "T".downcase_first
+  end
+
+  def test_downcase_first_with_empty_string
+    assert_equal "", "".downcase_first
+  end
+
   def test_upcase_first
     assert_equal "What a Lovely Day", "what a Lovely Day".upcase_first
   end
@@ -754,7 +766,7 @@ class StringConversionsTest < ActiveSupport::TestCase
   end
 end
 
-class StringBehaviourTest < ActiveSupport::TestCase
+class StringBehaviorTest < ActiveSupport::TestCase
   def test_acts_like_string
     assert_predicate "Bambi", :acts_like_string?
   end
@@ -824,7 +836,7 @@ class OutputSafetyTest < ActiveSupport::TestCase
 
   test "Adding an object not responding to `#to_str` to a safe string is deprecated" do
     string = @string.html_safe
-    assert_deprecated("Implicit conversion of #{@to_s_object.class} into String by ActiveSupport::SafeBuffer is deprecated") do
+    assert_deprecated("Implicit conversion of #{@to_s_object.class} into String by ActiveSupport::SafeBuffer is deprecated", ActiveSupport.deprecator) do
       string << @to_s_object
     end
     assert_equal "helloto_s", string
@@ -999,6 +1011,12 @@ class OutputSafetyTest < ActiveSupport::TestCase
 
     assert_equal "<b>oo", string
     assert_predicate string, :html_safe?
+
+    string = "foo".html_safe
+    string[0, 2] = "<b>".html_safe
+
+    assert_equal "<b>o", string
+    assert_predicate string, :html_safe?
   end
 
   test "Replacing index of safe with unsafe yields escaped safe" do
@@ -1007,9 +1025,15 @@ class OutputSafetyTest < ActiveSupport::TestCase
 
     assert_equal "&lt;b&gt;oo", string
     assert_predicate string, :html_safe?
+
+    string = "foo".html_safe
+    string[1, 1] = "<b>"
+
+    assert_equal "f&lt;b&gt;o", string
+    assert_predicate string, :html_safe?
   end
 
-  test "emits normal string yaml" do
+  test "emits normal string YAML" do
     assert_equal "foo".to_yaml, "foo".html_safe.to_yaml(foo: 1)
   end
 
@@ -1048,6 +1072,35 @@ class OutputSafetyTest < ActiveSupport::TestCase
     string = "\251 <"
     expected = "© &lt;"
     assert_equal expected, ERB::Util.html_escape_once(string)
+  end
+
+  test "ERB::Util.xml_name_escape should escape unsafe characters for XML names" do
+    unsafe_char = ">"
+    safe_char = "Á"
+    safe_char_after_start = "3"
+    starting_with_dash = "-foo"
+
+    assert_equal "_", ERB::Util.xml_name_escape(unsafe_char)
+    assert_equal "_#{safe_char}", ERB::Util.xml_name_escape(unsafe_char + safe_char)
+    assert_equal "__", ERB::Util.xml_name_escape(unsafe_char * 2)
+
+    assert_equal "__#{safe_char}_",
+                 ERB::Util.xml_name_escape("#{unsafe_char * 2}#{safe_char}#{unsafe_char}")
+
+    assert_equal safe_char + safe_char_after_start,
+                 ERB::Util.xml_name_escape(safe_char + safe_char_after_start)
+
+    assert_equal "_#{safe_char}",
+                 ERB::Util.xml_name_escape(safe_char_after_start + safe_char)
+
+    assert_equal "img_src_nonexistent_onerror_alert_1_",
+                 ERB::Util.xml_name_escape("img src=nonexistent onerror=alert(1)")
+
+    common_dangerous_chars = "&<>\"' %*+,/;=^|"
+    assert_equal "_" * common_dangerous_chars.size,
+                 ERB::Util.xml_name_escape(common_dangerous_chars)
+
+    assert_equal "_foo", ERB::Util.xml_name_escape(starting_with_dash)
   end
 end
 

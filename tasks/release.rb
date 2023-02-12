@@ -99,12 +99,35 @@ npm_version = version.gsub(/\./).with_index { |s, i| i >= 2 ? "-" : s }
     end
 
     task push: :build do
-      sh "gem push #{gem}"
+      otp = ""
+      begin
+        otp = " --otp " + `ykman oath accounts code -s rubygems.org`.chomp
+      rescue
+        # User doesn't have ykman
+      end
+
+      sh "gem push #{gem}#{otp}"
 
       if File.exist?("#{framework}/package.json")
         Dir.chdir("#{framework}") do
-          npm_tag = /[a-z]/.match?(version) ? "pre" : "latest"
-          sh "npm publish --tag #{npm_tag}"
+          npm_otp = ""
+          begin
+            npm_otp = " --otp " + `ykman oath accounts code -s npmjs.com`.chomp
+          rescue
+            # User doesn't have ykman
+          end
+
+          npm_tag = ""
+          if /[a-z]/.match?(version)
+            npm_tag = " --tag pre"
+          else
+            remote_package_version = `npm view @rails/#{framework}@latest version`.chomp
+            local_major_version = version.split(".", 4)[0]
+            remote_major_version = remote_package_version.split(".", 4)[0]
+            npm_tag = remote_major_version <= local_major_version ? " --tag latest" : " --tag v#{local_major_version}"
+          end
+
+          sh "npm publish#{npm_tag}#{npm_otp}"
         end
       end
     end
@@ -291,7 +314,7 @@ module Announcement
     end
 
     def rc?
-      @version =~ /rc/
+      @version.include?("rc")
     end
   end
 end

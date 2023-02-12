@@ -114,6 +114,10 @@ module ActionController
     class Exception < StandardError
     end
 
+    class CurrentState < ActiveSupport::CurrentAttributes
+      attribute :id
+    end
+
     class TestController < ActionController::Base
       include ActionController::Live
 
@@ -164,6 +168,27 @@ module ActionController
         end
       end
 
+      def send_stream_with_inferred_content_type
+        send_stream(filename: "sample.csv") do |stream|
+          stream.writeln "fruit,quantity"
+          stream.writeln "apple,5"
+        end
+      end
+
+      def send_stream_with_implicit_content_type
+        send_stream(filename: "sample.csv", type: :csv) do |stream|
+          stream.writeln "fruit,quantity"
+          stream.writeln "apple,5"
+        end
+      end
+
+      def send_stream_with_explicit_content_type
+        send_stream(filename: "sample.csv", type: "text/csv") do |stream|
+          stream.writeln "fruit,quantity"
+          stream.writeln "apple,5"
+        end
+      end
+
       def blocking_stream
         response.headers["Content-Type"] = "text/event-stream"
         %w{ hello world }.each do |word|
@@ -201,6 +226,10 @@ module ActionController
           response.stream.write word
         end
         response.stream.close
+      end
+
+      def isolated_state
+        render plain: CurrentState.id.inspect
       end
 
       def with_stale
@@ -352,6 +381,36 @@ module ActionController
       assert_match "export", @response.headers["Content-Disposition"]
     end
 
+    def test_send_stream_with_explicit_content_type
+      get :send_stream_with_explicit_content_type
+
+      assert_equal "fruit,quantity\napple,5\n", @response.body
+
+      content_type = @response.headers.fetch("Content-Type")
+      assert_equal String, content_type.class
+      assert_equal "text/csv", content_type
+    end
+
+    def test_send_stream_with_implicit_content_type
+      get :send_stream_with_implicit_content_type
+
+      assert_equal "fruit,quantity\napple,5\n", @response.body
+
+      content_type = @response.headers.fetch("Content-Type")
+      assert_equal String, content_type.class
+      assert_equal "text/csv", content_type
+    end
+
+    def test_send_stream_with_inferred_content_type
+      get :send_stream_with_inferred_content_type
+
+      assert_equal "fruit,quantity\napple,5\n", @response.body
+
+      content_type = @response.headers.fetch("Content-Type")
+      assert_equal String, content_type.class
+      assert_equal "text/csv", content_type
+    end
+
     def test_delayed_autoload_after_write_within_interlock_hook
       # Simulate InterlockHook
       ActiveSupport::Dependencies.interlock.start_running
@@ -361,8 +420,6 @@ module ActionController
     end
 
     def test_async_stream
-      rubinius_skip "https://github.com/rubinius/rubinius/issues/2934"
-
       @controller.latch = Concurrent::CountDownLatch.new
       parts             = ["hello", "world"]
 
@@ -443,6 +500,15 @@ module ActionController
       Thread.current[:setting]            = "aaron"
 
       get :thread_locals
+    end
+
+    def test_isolated_state_get_copied
+      @controller.tc = self
+      CurrentState.id = "isolated_state"
+
+      get :isolated_state
+      assert_equal "isolated_state".inspect, response.body
+      assert_stream_closed
     end
 
     def test_live_stream_default_header

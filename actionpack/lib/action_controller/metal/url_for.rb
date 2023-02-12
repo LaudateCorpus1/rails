@@ -4,12 +4,10 @@ module ActionController
   # Includes +url_for+ into the host class. The class has to provide a +RouteSet+ by implementing
   # the <tt>_routes</tt> method. Otherwise, an exception will be raised.
   #
-  # In addition to <tt>AbstractController::UrlFor</tt>, this module accesses the HTTP layer to define
+  # In addition to AbstractController::UrlFor, this module accesses the HTTP layer to define
   # URL options like the +host+. In order to do so, this module requires the host class
-  # to implement +env+ which needs to be Rack-compatible and +request+
-  # which is either an instance of +ActionDispatch::Request+ or an object
-  # that responds to the +host+, +optional_port+, +protocol+ and
-  # +symbolized_path_parameter+ methods.
+  # to implement +env+ which needs to be Rack-compatible, and +request+ which
+  # returns an ActionDispatch::Request instance.
   #
   #   class RootUrl
   #     include ActionController::UrlFor
@@ -26,6 +24,11 @@ module ActionController
     extend ActiveSupport::Concern
 
     include AbstractController::UrlFor
+
+    def initialize(...)
+      super
+      @_url_options = nil
+    end
 
     def url_options
       @_url_options ||= {

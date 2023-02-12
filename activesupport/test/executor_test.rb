@@ -13,8 +13,8 @@ class ExecutorTest < ActiveSupport::TestCase
       @events = []
     end
 
-    def report(error, handled:, severity:, context:)
-      @events << [error, handled, severity, context]
+    def report(error, handled:, severity:, source:, context:)
+      @events << [error, handled, severity, source, context]
     end
   end
 
@@ -27,7 +27,15 @@ class ExecutorTest < ActiveSupport::TestCase
         raise error
       end
     end
-    assert_equal [[error, false, :error, {}]], subscriber.events
+    assert_equal [error, false, :error, "application.active_support", {}], subscriber.events.last
+
+    error = DummyError.new("Oops")
+    assert_raises DummyError do
+      executor.wrap(source: "custom") do
+        raise error
+      end
+    end
+    assert_equal [error, false, :error, "custom", {}], subscriber.events.last
   end
 
   def test_wrap_invokes_callbacks
@@ -218,7 +226,7 @@ class ExecutorTest < ActiveSupport::TestCase
   end
 
   def test_class_serial_is_unaffected
-    skip if !defined?(RubyVM)
+    skip if !defined?(RubyVM) || !RubyVM.stat.has_key?(:class_serial)
 
     hook = Class.new do
       define_method(:run) do
@@ -231,6 +239,9 @@ class ExecutorTest < ActiveSupport::TestCase
     end.new
 
     executor.register_hook(hook)
+
+    # Warm-up to trigger any pending autoloads
+    executor.wrap { }
 
     before = RubyVM.stat(:class_serial)
     executor.wrap { }

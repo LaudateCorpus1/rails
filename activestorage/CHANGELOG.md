@@ -1,249 +1,118 @@
-*   `Add ActiveStorage::Blob.compose` to concatenate multiple blobs.
+*   Add missing preview event to `ActiveStorage::LogSubscriber`
 
-    *Gannon McGibbon*
+    A `preview` event is being instrumented in `ActiveStorage::Previewer`.
+    However it was not added inside ActiveStorage's LogSubscriber class.
 
-*   Setting custom metadata on blobs are now persisted to remote storage.
+    This will allow to have logs for when a preview happens
+    in the same fashion as all other ActiveStorage events such as
+    `upload` and `download` inside `Rails.logger`.
 
-    *joshuamsager*
+    *Chedli Bourguiba*
 
-*   Support direct uploads to multiple services.
+*   Fix retrieving rotation value from FFmpeg on version 5.0+.
 
-    *Dmitry Tsepelev*
+    In FFmpeg version 5.0+ the rotation value has been removed from tags.
+    Instead the value can be found in side_data_list. Along with
+    this update it's possible to have values of -90, -270 to denote the video
+    has been rotated.
 
-*   Invalid default content types are deprecated
+    *Haroon Ahmed*
 
-    Blobs created with content_type `image/jpg`, `image/pjpeg`, `image/bmp`, `text/javascript` will now produce
-    a deprecation warning, since these are not valid content types.
+*   Touch all corresponding model records after ActiveStorage::Blob is analyzed
 
-    These content types will be removed from the defaults in Rails 7.1.
+    This fixes a race condition where a record can be requested and have a cache entry built, before
+    the initial `analyze_later` completes, which will not be invalidated until something else
+    updates the record. This also invalidates cache entries when a blob is re-analyzed, which
+    is helpful if a bug is fixed in an analyzer or a new analyzer is added.
 
-    You can set `config.active_storage.silence_invalid_content_types_warning = true` to dismiss the warning.
+    *Nate Matykiewicz*
 
-    *Alex Ghiculescu*
-
-## Rails 7.0.0.alpha2 (September 15, 2021) ##
-
-*   No changes.
-
-
-## Rails 7.0.0.alpha1 (September 15, 2021) ##
-
-*   Emit Active Support instrumentation events from Active Storage analyzers.
-
-    Fixes #42930
-
-    *Shouichi Kamiya*
-
-*   Add support for byte range requests
-
-    *Tom Prats*
-
-*   Attachments can be deleted after their association is no longer defined.
-
-    Fixes #42514
-
-    *Don Sisco*
-
-*   Make `vips` the default variant processor for new apps.
-
-    See the upgrade guide for instructions on converting from `mini_magick` to `vips`. `mini_magick` is
-    not deprecated, existing apps can keep using it.
-
-    *Breno Gazzola*
-
-*   Deprecate `ActiveStorage::Current.host` in favor of `ActiveStorage::Current.url_options` which accepts
-    a host, protocol and port.
-
-    *Santiago Bartesaghi*
-
-*   Allow using [IAM](https://cloud.google.com/storage/docs/access-control/signed-urls) when signing URLs with GCS.
-
-    ```yaml
-    gcs:
-      service: GCS
-      ...
-      iam: true
-    ```
-
-    *RRethy*
-
-*   OpenSSL constants are now used for Digest computations.
-
-    *Dirkjan Bussink*
-
-*   Deprecate `config.active_storage.replace_on_assign_to_many`. Future versions of Rails
-    will behave the same way as when the config is set to `true`.
-
-    *Santiago Bartesaghi*
-
-*   Remove deprecated methods: `build_after_upload`, `create_after_upload!` in favor of `create_and_upload!`,
-    and `service_url` in favor of `url`.
-
-    *Santiago Bartesaghi*
-
-*   Add support of `strict_loading_by_default` to `ActiveStorage::Representations` controllers.
-
-    *Anton Topchii*, *Andrew White*
-
-*   Allow to detach an attachment when record is not persisted.
-
-    *Jacopo Beschi*
-
-*   Use libvips instead of ImageMagick to analyze images when `active_storage.variant_processor = vips`.
-
-    *Breno Gazzola*
-
-*   Add metadata value for presence of video channel in video blobs.
-
-    The `metadata` attribute of video blobs has a new boolean key named `video` that is set to
-    `true` if the file has an video channel and `false` if it doesn't.
-
-    *Breno Gazzola*
-
-*   Deprecate usage of `purge` and `purge_later` from the association extension.
-
-    *Jacopo Beschi*
-
-*   Passing extra parameters in `ActiveStorage::Blob#url` to S3 Client.
-
-    This allows calls of `ActiveStorage::Blob#url` to have more interaction with
-    the S3 Presigner, enabling, amongst other options, custom S3 domain URL
-    Generation.
-
-    ```ruby
-    blob = ActiveStorage::Blob.last
-
-    blob.url # => https://<bucket-name>.s3.<region>.amazonaws.com/<key>
-    blob.url(virtual_host: true) # => # => https://<bucket-name>/<key>
-    ```
-
-    *josegomezr*
-
-*   Allow setting a `Cache-Control` on files uploaded to GCS.
-
-    ```yaml
-    gcs:
-      service: GCS
-      ...
-      cache_control: "public, max-age=3600"
-    ```
-
-    *maleblond*
-
-*   The parameters sent to `ffmpeg` for generating a video preview image are now
-    configurable under `config.active_storage.video_preview_arguments`.
-
-    *Brendon Muir*
-
-*   The ActiveStorage video previewer will now use scene change detection to generate
-    better preview images (rather than the previous default of using the first frame
-    of the video). This change requires FFmpeg v3.4+.
-
-    *Jonathan Hefner*
-
-*   Add support for ActiveStorage expiring URLs.
-
-    ```ruby
-    rails_blob_path(user.avatar, disposition: "attachment", expires_in: 30.minutes)
-
-    <%= image_tag rails_blob_path(user.avatar.variant(resize: "100x100"), expires_in: 30.minutes) %>
-    ```
-
-    If you want to set default expiration time for ActiveStorage URLs throughout your application, set `config.active_storage.urls_expire_in`.
-
-    *aki77*
-
-*   Allow to purge an attachment when record is not persisted for `has_many_attached`.
-
-    *Jacopo Beschi*
-
-*   Add `with_all_variant_records` method to eager load all variant records on an attachment at once.
-    `with_attached_image` scope now eager loads variant records if using variant tracking.
-
-    *Alex Ghiculescu*
-
-*   Add metadata value for presence of audio channel in video blobs.
-
-    The `metadata` attribute of video blobs has a new boolean key named `audio` that is set to
-    `true` if the file has an audio channel and `false` if it doesn't.
-
-    *Breno Gazzola*
-
-*   Adds analyzer for audio files.
-
-    *Breno Gazzola*
-
-*   Respect Active Record's primary_key_type in Active Storage migrations.
-
-    *fatkodima*
-
-*   Allow `expires_in` for ActiveStorage signed ids.
-
-    *aki77*
-
-*   Allow to purge an attachment when record is not persisted for `has_one_attached`.
-
-    *Jacopo Beschi*
-
-*   Add a load hook called `active_storage_variant_record` (providing `ActiveStorage::VariantRecord`)
-    to allow for overriding aspects of the `ActiveStorage::VariantRecord` class. This makes
-    `ActiveStorage::VariantRecord` consistent with `ActiveStorage::Blob` and `ActiveStorage::Attachment`
-    that already have load hooks.
-
-    *Brendon Muir*
-
-*   `ActiveStorage::PreviewError` is raised when a previewer is unable to generate a preview image.
-
-    *Alex Robbin*
-
-*   Add `ActiveStorage::Streaming` module that can be included in a controller to get access to `#send_blob_stream`,
-    which wraps the new `ActionController::Base#send_stream` method to stream a blob from cloud storage:
-
-    ```ruby
-    class MyPublicBlobsController < ApplicationController
-      include ActiveStorage::SetBlob, ActiveStorage::Streaming
-
-      def show
-        http_cache_forever(public: true) do
-          send_blob_stream @blob, disposition: params[:disposition]
-        end
-      end
-    end
-    ```
-
-    *DHH*
-
-*   Add ability to use pre-defined variants.
+*   Add ability to use pre-defined variants when calling `preview` or
+    `representation` on an attachment.
 
     ```ruby
     class User < ActiveRecord::Base
-      has_one_attached :avatar do |attachable|
-        attachable.variant :thumb, resize: "100x100"
-        attachable.variant :medium, resize: "300x300", monochrome: true
+      has_one_attached :file do |attachable|
+        attachable.variant :thumb, resize_to_limit: [100, 100]
       end
     end
 
-    class Gallery < ActiveRecord::Base
-      has_many_attached :photos do |attachable|
-        attachable.variant :thumb, resize: "100x100"
-        attachable.variant :medium, resize: "300x300", monochrome: true
-      end
-    end
-
-    <%= image_tag user.avatar.variant(:thumb) %>
+    <%= image_tag user.file.representation(:thumb) %>
     ```
 
-    *fatkodima*
+    *Richard Böhme*
 
-*   After setting `config.active_storage.resolve_model_to_route = :rails_storage_proxy`
-    `rails_blob_path` and `rails_representation_path` will generate proxy URLs by default.
+*   Method `attach` always returns the attachments except when the record
+    is persisted, unchanged, and saving it fails, in which case it returns `nil`.
 
-    *Ali Ismayilov*
+    *Santiago Bartesaghi*
 
-*   Declare `ActiveStorage::FixtureSet` and `ActiveStorage::FixtureSet.blob` to
-    improve fixture integration.
+*   Fixes multiple `attach` calls within transaction not uploading files correctly.
 
-    *Sean Doyle*
+    In the following example, the code failed to upload all but the last file to the configured service.
+    ```ruby
+      ActiveRecord::Base.transaction do
+        user.attachments.attach({
+          content_type: "text/plain",
+          filename: "dummy.txt",
+          io: ::StringIO.new("dummy"),
+        })
+        user.attachments.attach({
+          content_type: "text/plain",
+          filename: "dummy2.txt",
+          io: ::StringIO.new("dummy2"),
+        })
+      end
 
+      assert_equal 2, user.attachments.count
+      assert user.attachments.first.service.exist?(user.attachments.first.key)  # Fails
+    ```
 
-Please check [6-1-stable](https://github.com/rails/rails/blob/6-1-stable/activestorage/CHANGELOG.md) for previous changes.
+    This was addressed by keeping track of the subchanges pending upload, and uploading them
+    once the transaction is committed.
+
+    Fixes #41661
+
+    *Santiago Bartesaghi*, *Bruno Vezoli*, *Juan Roig*, *Abhay Nikam*
+
+*   Raise an exception if `config.active_storage.service` is not set.
+
+    If Active Storage is configured and `config.active_storage.service` is not
+    set in the respective environment's configuration file, then an exception
+    is raised with a meaningful message when attempting to use Active Storage.
+
+    *Ghouse Mohamed*
+
+*   Fixes proxy downloads of files over 5mb
+
+    Previously, trying to view and/or download files larger than 5mb stored in
+    services like S3 via proxy mode could return corrupted files at around
+    5.2mb or cause random halts in the download. Now,
+    `ActiveStorage::Blobs::ProxyController` correctly handles streaming these
+    larger files from the service to the client without any issues.
+
+    Fixes #44679
+
+    *Felipe Raul*
+
+*   Saving attachment(s) to a record returns the blob/blobs object
+
+    Previously, saving attachments did not return the blob/blobs that
+    were attached. Now, saving attachments to a record with `#attach`
+    method returns the blob or array of blobs that were attached to
+    the record. If it fails to save the attachment(s), then it returns
+    `false`.
+
+    *Ghouse Mohamed*
+
+*   Don't stream responses in redirect mode
+
+    Previously, both redirect mode and proxy mode streamed their
+    responses which caused a new thread to be created, and could end
+    up leaking connections in the connection pool. But since redirect
+    mode doesn't actually send any data, it doesn't need to be
+    streamed.
+
+    *Luke Lau*
+
+Please check [7-0-stable](https://github.com/rails/rails/blob/7-0-stable/activestorage/CHANGELOG.md) for previous changes.
