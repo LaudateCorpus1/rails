@@ -1,7 +1,6 @@
 # frozen_string_literal: true
 
 require "active_support/core_ext/big_decimal/conversions"
-require "active_support/core_ext/object/blank"
 require "active_support/core_ext/hash/keys"
 require "active_support/i18n"
 require "active_support/core_ext/class/attribute"
@@ -122,7 +121,8 @@ module ActiveSupport
 
       def initialize(number, options)
         @number = number
-        @opts   = options.symbolize_keys
+        @opts = options.symbolize_keys
+        @options = nil
       end
 
       def execute

@@ -2,10 +2,18 @@
 
 module ActiveModel
   module Type
+    # The base class for all attribute types. This class also serves as the
+    # default type for attributes that do not specify a type.
     class Value
+      include SerializeCastValue
       attr_reader :precision, :scale, :limit
 
+      # Initializes a type with three basic configuration settings: precision,
+      # limit, and scale. The Value base class does not define behavior for
+      # these settings. It uses them for equality comparison and hash key
+      # generation only.
       def initialize(precision: nil, limit: nil, scale: nil)
+        super()
         @precision = precision
         @scale = scale
         @limit = limit
@@ -19,7 +27,9 @@ module ActiveModel
         true
       end
 
-      def type # :nodoc:
+      # Returns the unique type name as a Symbol. Subclasses should override
+      # this method.
+      def type
       end
 
       # Converts a value from database input to the appropriate ruby type. The
@@ -119,6 +129,14 @@ module ActiveModel
       end
 
       def assert_valid_value(_)
+      end
+
+      def immutable_value(value) # :nodoc:
+        value
+      end
+
+      def as_json(*)
+        raise NoMethodError
       end
 
       private

@@ -18,8 +18,8 @@ module ActionDispatch
       # match +path+. Basically, it asserts that \Rails recognizes the route given by +expected_options+.
       #
       # Pass a hash in the second argument (+path+) to specify the request method. This is useful for routes
-      # requiring a specific HTTP method. The hash should contain a :path with the incoming request path
-      # and a :method containing the required HTTP verb.
+      # requiring a specific HTTP method. The hash should contain a +:path+ with the incoming request path
+      # and a +:method+ containing the required HTTP verb.
       #
       #   # Asserts that POSTing to /items will call the create action on ItemsController
       #   assert_recognizes({controller: 'items', action: 'create'}, {path: 'items', method: :post})
@@ -83,7 +83,7 @@ module ActionDispatch
       #   # Asserts that the generated route gives us our custom route
       #   assert_generates "changesets/12", { controller: 'scm', action: 'show_diff', revision: "12" }
       def assert_generates(expected_path, options, defaults = {}, extras = {}, message = nil)
-        if %r{://}.match?(expected_path)
+        if expected_path.include?("://")
           fail_on(URI::InvalidURIError, message) do
             uri = URI.parse(expected_path)
             expected_path = uri.path.to_s.empty? ? "/" : uri.path
@@ -187,6 +187,7 @@ module ActionDispatch
           super
         end
       end
+      ruby2_keywords(:method_missing)
 
       private
         # Recognizes the route for a given path.
@@ -201,7 +202,7 @@ module ActionDispatch
           controller = @controller if defined?(@controller)
           request = ActionController::TestRequest.create controller&.class
 
-          if %r{://}.match?(path)
+          if path.include?("://")
             fail_on(URI::InvalidURIError, msg) do
               uri = URI.parse(path)
               request.env["rack.url_scheme"] = uri.scheme || "http"

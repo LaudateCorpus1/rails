@@ -120,6 +120,30 @@ module ActiveRecord
         end
       end
 
+      if ActiveRecord::Base.connection.supports_bulk_alter?
+        def test_bulk_invert_change_table
+          block = Proc.new do |t|
+            t.string :name
+            t.rename :kind, :cultivar
+          end
+
+          @recorder.revert do
+            @recorder.change_table :fruits, bulk: true, &block
+          end
+
+          @recorder.revert do
+            @recorder.revert do
+              @recorder.change_table :fruits, bulk: true, &block
+            end
+          end
+
+          assert_equal [
+            [:change_table, [:fruits]],
+            [:change_table, [:fruits]]
+          ], @recorder.commands.map { |command| command[0...-1] }
+        end
+      end
+
       def test_invert_create_table
         @recorder.revert do
           @recorder.record :create_table, [:system_settings]
@@ -430,6 +454,26 @@ module ActiveRecord
       def test_invert_remove_check_constraint_without_expression
         assert_raises(ActiveRecord::IrreversibleMigration) do
           @recorder.inverse_of :remove_check_constraint, [:dogs]
+        end
+      end
+
+      def test_invert_create_enum
+        drop = @recorder.inverse_of :create_enum, [:color, ["blue", "green"]]
+        assert_equal [:drop_enum, [:color, ["blue", "green"]], nil], drop
+      end
+
+      def test_invert_drop_enum
+        create = @recorder.inverse_of :drop_enum, [:color, ["blue", "green"]]
+        assert_equal [:create_enum, [:color, ["blue", "green"]], nil], create
+      end
+
+      def test_invert_drop_enum_without_values
+        assert_raises(ActiveRecord::IrreversibleMigration) do
+          @recorder.inverse_of :drop_enum, [:color]
+        end
+
+        assert_raises(ActiveRecord::IrreversibleMigration) do
+          @recorder.inverse_of :drop_enum, [:color, if_exists: true]
         end
       end
     end

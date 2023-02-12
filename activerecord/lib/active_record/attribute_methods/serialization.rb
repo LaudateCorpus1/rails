@@ -24,38 +24,6 @@ module ActiveRecord
         # The serialization format may be YAML, JSON, or any custom format using a
         # custom coder class.
         #
-        # === Serialization formats
-        #
-        #   serialize attr_name [, class_name_or_coder]
-        #
-        #                        |                           |  database storage   |
-        #   class_name_or_coder  | attribute read/write type | serialized | NULL   |
-        #   ---------------------+---------------------------+------------+--------+
-        #     <not given>        | any value that supports   |    YAML    |        |
-        #                        |   .to_yaml                |            |        |
-        #                        |                           |            |        |
-        #   Array                | Array **                  |    YAML    |  []    |
-        #                        |                           |            |        |
-        #   Hash                 | Hash **                   |    YAML    |  {}    |
-        #                        |                           |            |        |
-        #   JSON                 | any value that supports   |    JSON    |        |
-        #                        |   .to_json                |            |        |
-        #                        |                           |            |        |
-        #   <custom coder class> | any value supported by    |   custom   | custom |
-        #                        | the custom coder class    |            |        |
-        #
-        # ** If +class_name_or_coder+ is +Array+ or +Hash+, values retrieved will
-        # always be of that type, and any value assigned must be of that type or
-        # +SerializationTypeMismatch+ will be raised.
-        #
-        # ==== Custom coders
-        # A custom coder class or module may be given. This must have +self.load+
-        # and +self.dump+ class/module methods. <tt>self.dump(object)</tt> will be called
-        # to serialize an object and should return the serialized value to be
-        # stored in the database (+nil+ to store as +NULL+). <tt>self.load(string)</tt>
-        # will be called to reverse the process and load (unserialize) from the
-        # database.
-        #
         # Keep in mind that database adapters handle certain serialization tasks
         # for you. For instance: +json+ and +jsonb+ types in PostgreSQL will be
         # converted between JSON object/array syntax and Ruby +Hash+ or +Array+
@@ -67,56 +35,81 @@ module ActiveRecord
         #
         # ==== Parameters
         #
-        # * +attr_name+ - The field name that should be serialized.
-        # * +class_name_or_coder+ - Optional, may be be +Array+ or +Hash+ or
-        #   +JSON+ or a custom coder class or module which responds to +.load+
-        #   and +.dump+. See table above.
+        # * +attr_name+ - The name of the attribute to serialize.
+        # * +class_name_or_coder+ - Optional. May be one of the following:
+        #   * <em>default</em> - The attribute value will be serialized as YAML.
+        #     The attribute value must respond to +to_yaml+.
+        #   * +Array+ - The attribute value will be serialized as YAML, but an
+        #     empty +Array+ will be serialized as +NULL+. The attribute value
+        #     must be an +Array+.
+        #   * +Hash+ - The attribute value will be serialized as YAML, but an
+        #     empty +Hash+ will be serialized as +NULL+. The attribute value
+        #     must be a +Hash+.
+        #   * +JSON+ - The attribute value will be serialized as JSON. The
+        #     attribute value must respond to +to_json+.
+        #   * <em>custom coder</em> - The attribute value will be serialized
+        #     using the coder's <tt>dump(value)</tt> method, and will be
+        #     deserialized using the coder's <tt>load(string)</tt> method. The
+        #     +dump+ method may return +nil+ to serialize the value as +NULL+.
+        # * +yaml+ - Optional. Yaml specific options. The allowed config is:
+        #   * +:permitted_classes+ - +Array+ with the permitted classes.
+        #   * +:unsafe_load+ - Unsafely load YAML blobs, allow YAML to load any class.
         #
         # ==== Options
         #
-        # +default+ The default value to use when no value is provided. If this option
-        # is not passed, the previous default value (if any) will be used.
-        # Otherwise, the default will be +nil+.
+        # * +:default+ - The default value to use when no value is provided. If
+        #   this option is not passed, the previous default value (if any) will
+        #   be used. Otherwise, the default will be +nil+.
         #
-        # ==== Example
+        # ==== Examples
         #
-        #   # Serialize a preferences attribute using YAML coder.
+        # ===== Serialize the +preferences+ attribute using YAML
+        #
         #   class User < ActiveRecord::Base
         #     serialize :preferences
         #   end
         #
-        #   # Serialize preferences using JSON as coder.
+        # ===== Serialize the +preferences+ attribute using JSON
+        #
         #   class User < ActiveRecord::Base
         #     serialize :preferences, JSON
         #   end
         #
-        #   # Serialize preferences as Hash using YAML coder.
+        # ===== Serialize the +preferences+ +Hash+ using YAML
+        #
         #   class User < ActiveRecord::Base
         #     serialize :preferences, Hash
         #   end
         #
-        #   # Serialize preferences using a custom coder.
+        # ===== Serializes +preferences+ to YAML, permitting select classes
+        #
+        #   class User < ActiveRecord::Base
+        #     serialize :preferences, yaml: { permitted_classes: [Symbol, Time] }
+        #   end
+        #
+        # ===== Serialize the +preferences+ attribute using a custom coder
+        #
         #   class Rot13JSON
         #     def self.rot13(string)
         #       string.tr("a-zA-Z", "n-za-mN-ZA-M")
         #     end
         #
-        #     # returns serialized string that will be stored in the database
-        #     def self.dump(object)
-        #       ActiveSupport::JSON.encode(object).rot13
+        #     # Serializes an attribute value to a string that will be stored in the database.
+        #     def self.dump(value)
+        #       rot13(ActiveSupport::JSON.dump(value))
         #     end
         #
-        #     # reverses the above, turning the serialized string from the database
-        #     # back into its original value
+        #     # Deserializes a string from the database to an attribute value.
         #     def self.load(string)
-        #       ActiveSupport::JSON.decode(string.rot13)
+        #       ActiveSupport::JSON.load(rot13(string))
         #     end
         #   end
         #
         #   class User < ActiveRecord::Base
         #     serialize :preferences, Rot13JSON
         #   end
-        def serialize(attr_name, class_name_or_coder = Object, **options)
+        #
+        def serialize(attr_name, class_name_or_coder = Object, yaml: {}, **options)
           # When ::JSON is used, force it to go through the Active Support JSON encoder
           # to ensure special objects (e.g. Active Record models) are dumped correctly
           # using the #as_json hook.
@@ -125,7 +118,7 @@ module ActiveRecord
           elsif [:load, :dump].all? { |x| class_name_or_coder.respond_to?(x) }
             class_name_or_coder
           else
-            Coders::YAMLColumn.new(attr_name, class_name_or_coder)
+            Coders::YAMLColumn.new(attr_name, class_name_or_coder, **yaml)
           end
 
           attribute(attr_name, **options) do |cast_type|

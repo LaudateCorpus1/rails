@@ -261,6 +261,7 @@ module ActionController
           # Since we're processing the view in a different thread, copy the
           # thread locals from the main thread to the child thread. :'(
           locals.each { |k, v| t2[k] = v }
+          ActiveSupport::IsolatedExecutionState.share_with(t1)
 
           begin
             super(name)
@@ -320,7 +321,7 @@ module ActionController
     def send_stream(filename:, disposition: "attachment", type: nil)
       response.headers["Content-Type"] =
         (type.is_a?(Symbol) ? Mime[type].to_s : type) ||
-        Mime::Type.lookup_by_extension(File.extname(filename).downcase.delete(".")) ||
+        Mime::Type.lookup_by_extension(File.extname(filename).downcase.delete("."))&.to_s ||
         "application/octet-stream"
 
       response.headers["Content-Disposition"] =

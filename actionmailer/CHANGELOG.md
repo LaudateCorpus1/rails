@@ -1,23 +1,46 @@
-*   Remove deprecated `ActionMailer::DeliveryJob` and `ActionMailer::Parameterized::DeliveryJob`
-    in favor of `ActionMailer::MailDeliveryJob`.
+*   Email previews now include an expandable section to show all headers.
 
-    *Rafael Mendonça França*
+    Headers like `Message-ID` for threading or email service provider specific
+    features like analytics tags or account metadata can now be viewed directly
+    in the mailer preview.
 
-*   `email_address_with_name` returns just the address if name is blank.
+    *Matt Swanson*
 
-    *Thomas Hutterer*
+*   Default `ActionMailer::Parameterized#params` to an empty `Hash`
 
+    *Sean Doyle*
 
-## Rails 7.0.0.alpha2 (September 15, 2021) ##
+*   `assert_emails` now returns the emails that were sent.
 
-*   No changes.
+    This makes it easier to do further analysis on those emails:
 
+    ```ruby
+    def test_emails_more_thoroughly
+      email = assert_emails 1 do
+        ContactMailer.welcome.deliver_now
+      end
+      assert_email "Hi there", email.subject
 
-## Rails 7.0.0.alpha1 (September 15, 2021) ##
+      emails = assert_emails 2 do
+        ContactMailer.welcome.deliver_now
+        ContactMailer.welcome.deliver_later
+      end
+      assert_email "Hi there", emails.first.subject
+    end
+    ```
 
-*   Configures a default of 5 for both `open_timeout` and `read_timeout` for SMTP Settings.
+    *Alex Ghiculescu*
 
-    *André Luis Leal Cardoso Junior*
+*   Added ability to download `.eml` file for the email preview.
 
+    *Igor Kasyanchuk*
 
-Please check [6-1-stable](https://github.com/rails/rails/blob/6-1-stable/actionmailer/CHANGELOG.md) for previous changes.
+*   Support multiple preview paths for mailers.
+
+    Option `config.action_mailer.preview_path` is deprecated in favor of
+    `config.action_mailer.preview_paths`. Appending paths to this configuration option
+    will cause those paths to be used in the search for mailer previews.
+
+    *fatkodima*
+
+Please check [7-0-stable](https://github.com/rails/rails/blob/7-0-stable/actionmailer/CHANGELOG.md) for previous changes.

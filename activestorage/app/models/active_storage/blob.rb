@@ -15,24 +15,9 @@
 # update a blob's metadata on a subsequent pass, but you should not update the key or change the uploaded file.
 # If you need to create a derivative or otherwise change the blob, simply create a new blob and purge the old one.
 class ActiveStorage::Blob < ActiveStorage::Record
-  # We use constant paths in the following include calls to avoid a gotcha of
-  # classic mode: If the parent application defines a top-level Analyzable, for
-  # example, and ActiveStorage::Blob::Analyzable is not yet loaded, a bare
-  #
-  #   include Analyzable
-  #
-  # would resolve to the top-level one, const_missing would not be triggered,
-  # and therefore ActiveStorage::Blob::Analyzable would not be autoloaded.
-  #
-  # By using qualified names, we ensure const_missing is invoked if needed.
-  # Please, note that Ruby 2.5 or newer is required, so Object is not checked
-  # when looking up the ancestors of ActiveStorage::Blob.
-  #
-  # Zeitwerk mode does not have this gotcha. If we ever drop classic mode, this
-  # can be simplified, bare constant names would just work.
-  include ActiveStorage::Blob::Analyzable
-  include ActiveStorage::Blob::Identifiable
-  include ActiveStorage::Blob::Representable
+  include Analyzable
+  include Identifiable
+  include Representable
 
   self.table_name = "active_storage_blobs"
 
@@ -51,6 +36,8 @@ class ActiveStorage::Blob < ActiveStorage::Record
   after_initialize do
     self.service_name ||= self.class.service&.name
   end
+
+  after_update :touch_attachment_records
 
   after_update_commit :update_service_metadata, if: -> { content_type_previously_changed? || metadata_previously_changed? }
 
@@ -120,7 +107,7 @@ class ActiveStorage::Blob < ActiveStorage::Record
     # To prevent problems with case-insensitive filesystems, especially in combination
     # with databases which treat indices as case-sensitive, all blob keys generated are going
     # to only contain the base-36 character alphabet and will therefore be lowercase. To maintain
-    # the same or higher amount of entropy as in the base-58 encoding used by `has_secure_token`
+    # the same or higher amount of entropy as in the base-58 encoding used by +has_secure_token+
     # the number of bytes used is increased to 28 from the standard 24
     def generate_unique_secure_token(length: MINIMUM_TOKEN_LENGTH)
       SecureRandom.base36(length)
@@ -148,15 +135,13 @@ class ActiveStorage::Blob < ActiveStorage::Record
     end
 
     # Concatenate multiple blobs into a single "composed" blob.
-    def compose(filename:, blobs:, content_type: nil, metadata: nil)
-      unless blobs.all?(&:persisted?)
-        raise(ActiveRecord::RecordNotSaved, "All blobs must be persisted.")
-      end
+    def compose(blobs, filename:, content_type: nil, metadata: nil)
+      raise ActiveRecord::RecordNotSaved, "All blobs must be persisted." if blobs.any?(&:new_record?)
 
       content_type ||= blobs.pluck(:content_type).compact.first
 
       new(filename: filename, content_type: content_type, metadata: metadata, byte_size: blobs.sum(&:byte_size)).tap do |combined_blob|
-        combined_blob.compose(*blobs.pluck(:key))
+        combined_blob.compose(blobs.pluck(:key))
         combined_blob.save!
       end
     end
@@ -270,9 +255,9 @@ class ActiveStorage::Blob < ActiveStorage::Record
     service.upload key, io, checksum: checksum, **service_metadata
   end
 
-  def compose(*keys) # :nodoc:
+  def compose(keys) # :nodoc:
     self.composed = true
-    service.compose(*keys, key, **service_metadata)
+    service.compose(keys, key, **service_metadata)
   end
 
   # Downloads the file associated with this blob. If no block is given, the entire file is read into memory and returned.
@@ -345,7 +330,7 @@ class ActiveStorage::Blob < ActiveStorage::Record
   def content_type=(value)
     unless ActiveStorage.silence_invalid_content_types_warning
       if INVALID_VARIABLE_CONTENT_TYPES_DEPRECATED_IN_RAILS_7.include?(value)
-        ActiveSupport::Deprecation.warn(<<-MSG.squish)
+        ActiveStorage.deprecator.warn(<<-MSG.squish)
           #{value} is not a valid content type, it should not be used when creating a blob, and support for it will be removed in Rails 7.1.
           If you want to keep supporting this content type past Rails 7.1, add it to `config.active_storage.variable_content_types`.
           Dismiss this warning by setting `config.active_storage.silence_invalid_content_types_warning = true`.
@@ -353,7 +338,7 @@ class ActiveStorage::Blob < ActiveStorage::Record
       end
 
       if INVALID_VARIABLE_CONTENT_TYPES_TO_SERVE_AS_BINARY_DEPRECATED_IN_RAILS_7.include?(value)
-        ActiveSupport::Deprecation.warn(<<-MSG.squish)
+        ActiveStorage.deprecator.warn(<<-MSG.squish)
           #{value} is not a valid content type, it should not be used when creating a blob, and support for it will be removed in Rails 7.1.
           If you want to keep supporting this content type past Rails 7.1, add it to `config.active_storage.content_types_to_serve_as_binary`.
           Dismiss this warning by setting `config.active_storage.silence_invalid_content_types_warning = true`.
@@ -364,11 +349,13 @@ class ActiveStorage::Blob < ActiveStorage::Record
     super
   end
 
-  INVALID_VARIABLE_CONTENT_TYPES_DEPRECATED_IN_RAILS_7 = ["image/jpg", "image/pjpeg", "image/bmp"]
+  INVALID_VARIABLE_CONTENT_TYPES_DEPRECATED_IN_RAILS_7 = ["image/jpg", "image/pjpeg"]
   INVALID_VARIABLE_CONTENT_TYPES_TO_SERVE_AS_BINARY_DEPRECATED_IN_RAILS_7 = ["text/javascript"]
 
   private
     def compute_checksum_in_chunks(io)
+      raise ArgumentError, "io must be rewindable" unless io.respond_to?(:rewind)
+
       OpenSSL::Digest::MD5.new.tap do |checksum|
         while chunk = io.read(5.megabytes)
           checksum << chunk
@@ -398,9 +385,15 @@ class ActiveStorage::Blob < ActiveStorage::Record
       if forcibly_serve_as_binary?
         { content_type: ActiveStorage.binary_content_type, disposition: :attachment, filename: filename, custom_metadata: custom_metadata }
       elsif !allowed_inline?
-        { content_type: content_type, disposition: :attachment, filename: filename, custom_metadatata: custom_metadata }
+        { content_type: content_type, disposition: :attachment, filename: filename, custom_metadata: custom_metadata }
       else
         { content_type: content_type, custom_metadata: custom_metadata }
+      end
+    end
+
+    def touch_attachment_records
+      attachments.includes(:record).each do |attachment|
+        attachment.touch
       end
     end
 

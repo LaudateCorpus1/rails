@@ -16,7 +16,7 @@ class Workshop
   end
 
   def to_s
-    id.to_s
+    "Workshop #{id}"
   end
 end
 
@@ -383,6 +383,13 @@ class UrlHelperTest < ActiveSupport::TestCase
     )
   end
 
+  def test_button_to_with_block_and_hash_url
+    assert_dom_equal(
+      %{<form action="/other" class="button_to" method="post"><button class="button" type="submit">Hello</button></form>},
+      button_to({ controller: "foo", action: "other" }, class: "button") { "Hello" }
+    )
+  end
+
   def test_button_to_generates_input_when_button_to_generates_button_tag_false
     old_value = ActionView::Helpers::UrlHelper.button_to_generates_button_tag
     ActionView::Helpers::UrlHelper.button_to_generates_button_tag = false
@@ -393,6 +400,15 @@ class UrlHelperTest < ActiveSupport::TestCase
     )
   ensure
     ActionView::Helpers::UrlHelper.button_to_generates_button_tag = old_value
+  end
+
+  def test_button_to_with_content_exfiltration_prevention
+    with_prepend_content_exfiltration_prevention(true) do
+      assert_dom_equal(
+        %{<!-- '"` --><!-- </textarea></xmp> --></option></form><form method="post" action="http://www.example.com" class="button_to"><button type="submit">Hello</button></form>},
+        button_to("Hello", "http://www.example.com")
+      )
+    end
   end
 
   class FakeParams
@@ -621,7 +637,13 @@ class UrlHelperTest < ActiveSupport::TestCase
   def test_link_tag_using_active_record_model
     @workshop = Workshop.new(1.to_s)
     link = link_to(@workshop)
-    assert_dom_equal %{<a href="/workshops/1">1</a>}, link
+    assert_dom_equal %{<a href="/workshops/1">Workshop 1</a>}, link
+  end
+
+  def test_link_tag_using_active_record_model_twice
+    @workshop = Workshop.new(1.to_s)
+    link = link_to(@workshop, @workshop)
+    assert_dom_equal %{<a href="/workshops/1">Workshop 1</a>}, link
   end
 
   def test_link_to_unless
@@ -1023,6 +1045,16 @@ class UrlHelperTest < ActiveSupport::TestCase
   def request_forgery_protection_token
     "form_token"
   end
+
+  private
+    def with_prepend_content_exfiltration_prevention(value)
+      old_value = ActionView::Helpers::ContentExfiltrationPreventionHelper.prepend_content_exfiltration_prevention
+      ActionView::Helpers::ContentExfiltrationPreventionHelper.prepend_content_exfiltration_prevention = value
+
+      yield
+    ensure
+      ActionView::Helpers::ContentExfiltrationPreventionHelper.prepend_content_exfiltration_prevention = old_value
+    end
 end
 
 class UrlHelperControllerTest < ActionController::TestCase
@@ -1040,7 +1072,7 @@ class UrlHelperControllerTest < ActionController::TestCase
         to: "url_helper_controller_test/url_helper#show_named_route",
         as: :show_named_route
 
-      ActiveSupport::Deprecation.silence do
+      ActionDispatch.deprecator.silence do
         get "/:controller(/:action(/:id))"
       end
 

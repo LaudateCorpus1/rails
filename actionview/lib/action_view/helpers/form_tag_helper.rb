@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "cgi"
+require "action_view/helpers/content_exfiltration_prevention_helper"
 require "action_view/helpers/url_helper"
 require "action_view/helpers/text_helper"
 require "active_support/core_ext/string/output_safety"
@@ -19,6 +20,7 @@ module ActionView
 
       include UrlHelper
       include TextHelper
+      include ContentExfiltrationPreventionHelper
 
       mattr_accessor :embed_authenticity_token_in_remote_forms
       self.embed_authenticity_token_in_remote_forms = nil
@@ -62,7 +64,7 @@ module ActionView
       #
       #   <%= form_tag('/posts', remote: true) %>
       #   # => <form action="/posts" method="post" data-remote="true">
-
+      #
       #   form_tag(false, method: :get)
       #   # => <form method="get">
       #
@@ -96,7 +98,7 @@ module ActionView
       # <tt>aria-describedby</tt> attribute referencing the <tt><span></tt>
       # element, sharing a common <tt>id</tt> root (<tt>post_title</tt>, in this
       # case).
-      def field_id(object_name, method_name, *suffixes, index: nil)
+      def field_id(object_name, method_name, *suffixes, index: nil, namespace: nil)
         if object_name.respond_to?(:model_name)
           object_name = object_name.model_name.singular
         end
@@ -105,16 +107,13 @@ module ActionView
 
         sanitized_method_name = method_name.to_s.delete_suffix("?")
 
-        # a little duplication to construct fewer strings
-        if sanitized_object_name.empty?
-          sanitized_method_name
-        elsif suffixes.any?
-          [sanitized_object_name, index, sanitized_method_name, *suffixes].compact.join("_")
-        elsif index
-          "#{sanitized_object_name}_#{index}_#{sanitized_method_name}"
-        else
-          "#{sanitized_object_name}_#{sanitized_method_name}"
-        end
+        [
+          namespace,
+          sanitized_object_name.presence,
+          (index unless sanitized_object_name.empty?),
+          sanitized_method_name,
+          *suffixes,
+        ].tap(&:compact!).join("_")
       end
 
       # Generate an HTML <tt>name</tt> attribute value for the given name and
@@ -134,7 +133,7 @@ module ActionView
 
         # a little duplication to construct fewer strings
         case
-        when object_name.empty?
+        when object_name.blank?
           "#{method_name}#{names}#{multiple ? "[]" : ""}"
         when index
           "#{object_name}[#{index}][#{method_name}]#{names}#{multiple ? "[]" : ""}"
@@ -297,14 +296,14 @@ module ActionView
       #
       # ==== Examples
       #   hidden_field_tag 'tags_list'
-      #   # => <input id="tags_list" name="tags_list" type="hidden" />
+      #   # => <input type="hidden" name="tags_list" id="tags_list" autocomplete="off" />
       #
       #   hidden_field_tag 'token', 'VUBJKB23UIVI1UU1VOBVI@'
-      #   # => <input id="token" name="token" type="hidden" value="VUBJKB23UIVI1UU1VOBVI@" />
+      #   # => <input type="hidden" name="token" id="token" value="VUBJKB23UIVI1UU1VOBVI@" autocomplete="off" />
       #
       #   hidden_field_tag 'collected_input', '', onchange: "alert('Input collected!')"
-      #   # => <input id="collected_input" name="collected_input" onchange="alert('Input collected!')"
-      #   #    type="hidden" value="" />
+      #   # => <input type="hidden" name="collected_input" id="collected_input"
+      #        value="" onchange="alert(&#39;Input collected!&#39;)" autocomplete="off" />
       def hidden_field_tag(name, value = nil, options = {})
         text_field_tag(name, value, options.merge(type: :hidden, autocomplete: "off"))
       end
@@ -345,7 +344,7 @@ module ActionView
       #   file_field_tag 'file', accept: 'text/html', class: 'upload', value: 'index.html'
       #   # => <input accept="text/html" class="upload" id="file" name="file" type="file" value="index.html" />
       def file_field_tag(name, options = {})
-        text_field_tag(name, nil, convert_direct_upload_option_to_url(name, options.merge(type: :file)))
+        text_field_tag(name, nil, convert_direct_upload_option_to_url(options.merge(type: :file)))
       end
 
       # Creates a password field, a masked text field that will hide the users input behind a mask character.
@@ -423,9 +422,17 @@ module ActionView
         content_tag :textarea, content.to_s.html_safe, { "name" => name, "id" => sanitize_to_id(name) }.update(options)
       end
 
+      ##
+      # :call-seq:
+      #   check_box_tag(name, options = {})
+      #   check_box_tag(name, value, options = {})
+      #   check_box_tag(name, value, checked, options = {})
+      #
       # Creates a check box form input tag.
       #
       # ==== Options
+      # * <tt>:value</tt> - The value of the input. Defaults to <tt>"1"</tt>.
+      # * <tt>:checked</tt> - If set to true, the checkbox will be checked by default.
       # * <tt>:disabled</tt> - If set to true, the user will not be able to use this input.
       # * Any other key creates standard HTML options for the tag.
       #
@@ -444,16 +451,27 @@ module ActionView
       #
       #   check_box_tag 'eula', 'accepted', false, disabled: true
       #   # => <input disabled="disabled" id="eula" name="eula" type="checkbox" value="accepted" />
-      def check_box_tag(name, value = "1", checked = false, options = {})
+      def check_box_tag(name, *args)
+        if args.length >= 4
+          raise ArgumentError, "wrong number of arguments (given #{args.length + 1}, expected 1..4)"
+        end
+        options = args.extract_options!
+        value, checked = args.empty? ? ["1", false] : [*args, false]
         html_options = { "type" => "checkbox", "name" => name, "id" => sanitize_to_id(name), "value" => value }.update(options.stringify_keys)
         html_options["checked"] = "checked" if checked
         tag :input, html_options
       end
 
+      ##
+      # :call-seq:
+      #   radio_button_tag(name, value, options = {})
+      #   radio_button_tag(name, value, checked, options = {})
+      #
       # Creates a radio button; use groups of radio buttons named the same to allow users to
       # select from a group of options.
       #
       # ==== Options
+      # * <tt>:checked</tt> - If set to true, the radio button will be selected by default.
       # * <tt>:disabled</tt> - If set to true, the user will not be able to use this input.
       # * Any other key creates standard HTML options for the tag.
       #
@@ -469,7 +487,12 @@ module ActionView
       #
       #   radio_button_tag 'color', "green", true, class: "color_input"
       #   # => <input checked="checked" class="color_input" id="color_green" name="color" type="radio" value="green" />
-      def radio_button_tag(name, value, checked = false, options = {})
+      def radio_button_tag(name, value, *args)
+        if args.length >= 3
+          raise ArgumentError, "wrong number of arguments (given #{args.length + 2}, expected 2..4)"
+        end
+        options = args.extract_options!
+        checked = args.empty? ? false : args.first
         html_options = { "type" => "radio", "name" => name, "id" => "#{sanitize_to_id(name)}_#{sanitize_to_id(value)}", "value" => value }.update(options.stringify_keys)
         html_options["checked"] = "checked" if checked
         tag :input, html_options
@@ -660,9 +683,11 @@ module ActionView
       # Creates a text field of type "color".
       #
       # ==== Options
-      # * Accepts the same options as text_field_tag.
+      #
+      # Supports the same options as #text_field_tag.
       #
       # ==== Examples
+      #
       #   color_field_tag 'name'
       #   # => <input id="name" name="name" type="color" />
       #
@@ -681,9 +706,11 @@ module ActionView
       # Creates a text field of type "search".
       #
       # ==== Options
-      # * Accepts the same options as text_field_tag.
+      #
+      # Supports the same options as #text_field_tag.
       #
       # ==== Examples
+      #
       #   search_field_tag 'name'
       #   # => <input id="name" name="name" type="search" />
       #
@@ -702,9 +729,11 @@ module ActionView
       # Creates a text field of type "tel".
       #
       # ==== Options
-      # * Accepts the same options as text_field_tag.
+      #
+      # Supports the same options as #text_field_tag.
       #
       # ==== Examples
+      #
       #   telephone_field_tag 'name'
       #   # => <input id="name" name="name" type="tel" />
       #
@@ -724,9 +753,11 @@ module ActionView
       # Creates a text field of type "date".
       #
       # ==== Options
-      # * Accepts the same options as text_field_tag.
+      #
+      # Supports the same options as #text_field_tag.
       #
       # ==== Examples
+      #
       #   date_field_tag 'name'
       #   # => <input id="name" name="name" type="date" />
       #
@@ -744,23 +775,28 @@ module ActionView
 
       # Creates a text field of type "time".
       #
-      # === Options
+      # ==== Options
+      #
+      # Supports the same options as #text_field_tag. Additionally, supports:
+      #
       # * <tt>:min</tt> - The minimum acceptable value.
       # * <tt>:max</tt> - The maximum acceptable value.
       # * <tt>:step</tt> - The acceptable value granularity.
       # * <tt>:include_seconds</tt> - Include seconds and ms in the output timestamp format (true by default).
-      # * Otherwise accepts the same options as text_field_tag.
       def time_field_tag(name, value = nil, options = {})
         text_field_tag(name, value, options.merge(type: :time))
       end
 
       # Creates a text field of type "datetime-local".
       #
-      # === Options
+      # ==== Options
+      #
+      # Supports the same options as #text_field_tag. Additionally, supports:
+      #
       # * <tt>:min</tt> - The minimum acceptable value.
       # * <tt>:max</tt> - The maximum acceptable value.
       # * <tt>:step</tt> - The acceptable value granularity.
-      # * Otherwise accepts the same options as text_field_tag.
+      # * <tt>:include_seconds</tt> - Include seconds in the output timestamp format (true by default).
       def datetime_field_tag(name, value = nil, options = {})
         text_field_tag(name, value, options.merge(type: "datetime-local"))
       end
@@ -769,22 +805,26 @@ module ActionView
 
       # Creates a text field of type "month".
       #
-      # === Options
+      # ==== Options
+      #
+      # Supports the same options as #text_field_tag. Additionally, supports:
+      #
       # * <tt>:min</tt> - The minimum acceptable value.
       # * <tt>:max</tt> - The maximum acceptable value.
       # * <tt>:step</tt> - The acceptable value granularity.
-      # * Otherwise accepts the same options as text_field_tag.
       def month_field_tag(name, value = nil, options = {})
         text_field_tag(name, value, options.merge(type: :month))
       end
 
       # Creates a text field of type "week".
       #
-      # === Options
+      # ==== Options
+      #
+      # Supports the same options as #text_field_tag. Additionally, supports:
+      #
       # * <tt>:min</tt> - The minimum acceptable value.
       # * <tt>:max</tt> - The maximum acceptable value.
       # * <tt>:step</tt> - The acceptable value granularity.
-      # * Otherwise accepts the same options as text_field_tag.
       def week_field_tag(name, value = nil, options = {})
         text_field_tag(name, value, options.merge(type: :week))
       end
@@ -792,9 +832,11 @@ module ActionView
       # Creates a text field of type "url".
       #
       # ==== Options
-      # * Accepts the same options as text_field_tag.
+      #
+      # Supports the same options as #text_field_tag.
       #
       # ==== Examples
+      #
       #   url_field_tag 'name'
       #   # => <input id="name" name="name" type="url" />
       #
@@ -813,9 +855,11 @@ module ActionView
       # Creates a text field of type "email".
       #
       # ==== Options
-      # * Accepts the same options as text_field_tag.
+      #
+      # Supports the same options as #text_field_tag.
       #
       # ==== Examples
+      #
       #   email_field_tag 'name'
       #   # => <input id="name" name="name" type="email" />
       #
@@ -834,15 +878,18 @@ module ActionView
       # Creates a number field.
       #
       # ==== Options
+      #
+      # Supports the same options as #text_field_tag. Additionally, supports:
+      #
       # * <tt>:min</tt> - The minimum acceptable value.
       # * <tt>:max</tt> - The maximum acceptable value.
       # * <tt>:in</tt> - A range specifying the <tt>:min</tt> and
       #   <tt>:max</tt> values.
       # * <tt>:within</tt> - Same as <tt>:in</tt>.
       # * <tt>:step</tt> - The acceptable value granularity.
-      # * Otherwise accepts the same options as text_field_tag.
       #
       # ==== Examples
+      #
       #   number_field_tag 'quantity'
       #   # => <input id="quantity" name="quantity" type="number" />
       #
@@ -884,12 +931,13 @@ module ActionView
       # Creates a range form element.
       #
       # ==== Options
-      # * Accepts the same options as number_field_tag.
+      #
+      # Supports the same options as #number_field_tag.
       def range_field_tag(name, value = nil, options = {})
         number_field_tag(name, value, options.merge(type: :range))
       end
 
-      # Creates the hidden UTF8 enforcer tag. Override this method in a helper
+      # Creates the hidden UTF-8 enforcer tag. Override this method in a helper
       # to customize the tag.
       def utf8_enforcer_tag
         # Use raw HTML to ensure the value is written as an HTML entity; it
@@ -958,7 +1006,8 @@ module ActionView
 
         def form_tag_html(html_options)
           extra_tags = extra_tags_for_form(html_options)
-          tag(:form, html_options, true) + extra_tags
+          html = tag(:form, html_options, true) + extra_tags
+          prevent_content_exfiltration(html)
         end
 
         def form_tag_with_body(html_options, content)
@@ -987,24 +1036,15 @@ module ActionView
           tag_options.delete("data-disable-with")
         end
 
-        def convert_direct_upload_option_to_url(name, options)
-          if options.delete(:direct_upload) && respond_to?(:rails_direct_uploads_url)
+        def convert_direct_upload_option_to_url(options)
+          return options unless options.delete(:direct_upload)
+
+          if respond_to?(:rails_direct_uploads_url)
             options["data-direct-upload-url"] = rails_direct_uploads_url
-
-            if options[:object] && options[:object].class.respond_to?(:reflect_on_attachment)
-              attachment_reflection = options[:object].class.reflect_on_attachment(name)
-
-              class_with_attachment = "#{options[:object].class.name.underscore}##{name}"
-              options["data-direct-upload-attachment-name"] = class_with_attachment
-
-              service_name = attachment_reflection.options[:service_name] || ActiveStorage::Blob.service.name
-              options["data-direct-upload-token"] = ActiveStorage::DirectUploadToken.generate_direct_upload_token(
-                class_with_attachment,
-                service_name,
-                session
-              )
-            end
+          elsif respond_to?(:main_app) && main_app.respond_to?(:rails_direct_uploads_url)
+            options["data-direct-upload-url"] = main_app.rails_direct_uploads_url
           end
+
           options
         end
     end

@@ -12,18 +12,15 @@ module ActionDispatch # :nodoc:
   # back to the web browser) or a TestResponse (i.e. one that is generated
   # from integration tests).
   #
-  # \Response is mostly a Ruby on \Rails framework implementation detail, and
-  # should never be used directly in controllers. Controllers should use the
-  # methods defined in ActionController::Base instead. For example, if you want
-  # to set the HTTP response's content MIME type, then use
-  # ActionControllerBase#headers instead of Response#headers.
+  # The \Response object for the current request is exposed on controllers as
+  # ActionController::Metal#response. ActionController::Metal also provides a
+  # few additional methods that delegate to attributes of the \Response such as
+  # ActionController::Metal#headers.
   #
-  # Nevertheless, integration tests may want to inspect controller responses in
-  # more detail, and that's when \Response can be useful for application
-  # developers. Integration test methods such as
-  # ActionDispatch::Integration::Session#get and
-  # ActionDispatch::Integration::Session#post return objects of type
-  # TestResponse (which are of course also of type \Response).
+  # Integration tests will likely also want to inspect responses in
+  # more detail. Methods such as Integration::RequestHelpers#get
+  # and Integration::RequestHelpers#post return instances of
+  # TestResponse (which inherits from \Response) for this purpose.
   #
   # For example, the following demo integration test prints the body of the
   # controller response to the console:
@@ -35,27 +32,14 @@ module ActionDispatch # :nodoc:
   #    end
   #  end
   class Response
-    class Header < DelegateClass(Hash) # :nodoc:
-      def initialize(response, header)
-        @response = response
-        super(header)
-      end
-
-      def []=(k, v)
-        if @response.sending? || @response.sent?
-          raise ActionDispatch::IllegalStateError, "header already sent"
-        end
-
-        super
-      end
-
-      def merge(other)
-        self.class.new @response, __getobj__.merge(other)
-      end
-
-      def to_hash
-        __getobj__.dup
-      end
+    begin
+      # For `Rack::Headers` (Rack 3+):
+      require "rack/headers"
+      Header = ::Rack::Headers
+    rescue LoadError
+      # For `Rack::Utils::HeaderHash`:
+      require "rack/utils"
+      Header = ::Rack::Utils::HeaderHash
     end
 
     # The request that the response is responding to.
@@ -64,7 +48,18 @@ module ActionDispatch # :nodoc:
     # The HTTP status code.
     attr_reader :status
 
-    # Get headers for this response.
+    # The headers for the response.
+    #
+    #   header["Content-Type"] # => "text/plain"
+    #   header["Content-Type"] = "application/json"
+    #   header["Content-Type"] # => "application/json"
+    #
+    # Also aliased as +headers+.
+    #
+    #   headers["Content-Type"] # => "text/plain"
+    #   headers["Content-Type"] = "application/json"
+    #   headers["Content-Type"] # => "application/json"
+    #
     attr_reader :header
 
     alias_method :headers,  :header
@@ -118,6 +113,7 @@ module ActionDispatch # :nodoc:
         @response.commit!
         @buf.push string
       end
+      alias_method :<<, :write
 
       def each(&block)
         if @str_body
@@ -159,10 +155,14 @@ module ActionDispatch # :nodoc:
     # The underlying body, as a streamable object.
     attr_reader :stream
 
-    def initialize(status = 200, header = {}, body = [])
+    def initialize(status = 200, header = nil, body = [])
       super()
 
-      @header = Header.new(self, header)
+      @header = Header.new
+
+      header&.each do |key, value|
+        @header[key] = value
+      end
 
       self.body, self.status = body, status
 
@@ -452,8 +452,8 @@ module ActionDispatch # :nodoc:
       # our last chance.
       commit! unless committed?
 
-      headers.freeze
-      request.commit_cookie_jar! unless committed?
+      @header.freeze
+      @request.commit_cookie_jar! unless committed?
     end
 
     def build_buffer(response, body)
@@ -501,10 +501,6 @@ module ActionDispatch # :nodoc:
 
       def to_path
         @response.stream.to_path
-      end
-
-      def to_ary
-        nil
       end
     end
 

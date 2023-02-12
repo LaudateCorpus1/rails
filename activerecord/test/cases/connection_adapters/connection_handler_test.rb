@@ -6,15 +6,17 @@ require "models/person"
 module ActiveRecord
   module ConnectionAdapters
     class ConnectionHandlerTest < ActiveRecord::TestCase
-      self.use_transactional_tests = false
-
       fixtures :people
 
       def setup
         @handler = ConnectionHandler.new
-        @owner_name = "ActiveRecord::Base"
+        @connection_name = "ActiveRecord::Base"
         db_config = ActiveRecord::Base.configurations.configs_for(env_name: "arunit", name: "primary")
         @pool = @handler.establish_connection(db_config)
+      end
+
+      def teardown
+        clean_up_connection_handler
       end
 
       def test_default_env_fall_back_to_default_env_when_rails_env_or_rack_env_is_empty_string
@@ -66,9 +68,26 @@ module ActiveRecord
           connection_handler = ActiveRecord::Base.connection_handler
           ActiveRecord::Base.connection_handler = ActiveRecord::ConnectionAdapters::ConnectionHandler.new
 
-          ActiveRecord::Base.connects_to(shards: { default: { all: :arunit }, one: { all: :arunit } })
+          ActiveRecord::Base.connects_to(shards: { default: { also_writing: :arunit }, one: { also_writing: :arunit } })
 
           assert_raises(ArgumentError) { setup_shared_connection_pool }
+        ensure
+          ActiveRecord::Base.connection_handler = connection_handler
+          ActiveRecord::Base.establish_connection :arunit
+        end
+
+        def test_fixtures_dont_raise_if_theres_no_writing_pool_config
+          connection_handler = ActiveRecord::Base.connection_handler
+          ActiveRecord::Base.connection_handler = ActiveRecord::ConnectionAdapters::ConnectionHandler.new
+
+          assert_nothing_raised do
+            ActiveRecord::Base.connects_to(database: { reading: :arunit, writing: :arunit })
+          end
+
+          rw_conn = ActiveRecord::Base.connection_handler.retrieve_connection("ActiveRecord::Base", role: :writing)
+          ro_conn = ActiveRecord::Base.connection_handler.retrieve_connection("ActiveRecord::Base", role: :reading)
+
+          assert_equal rw_conn, ro_conn
         ensure
           ActiveRecord::Base.connection_handler = connection_handler
           ActiveRecord::Base.establish_connection :arunit
@@ -77,9 +96,9 @@ module ActiveRecord
         def test_setting_writing_role_while_using_another_named_role_does_not_raise
           connection_handler = ActiveRecord::Base.connection_handler
           ActiveRecord::Base.connection_handler = ActiveRecord::ConnectionAdapters::ConnectionHandler.new
-          old_role, ActiveRecord.writing_role = ActiveRecord.writing_role, :all
+          old_role, ActiveRecord.writing_role = ActiveRecord.writing_role, :also_writing
 
-          ActiveRecord::Base.connects_to(shards: { default: { all: :arunit }, one: { all: :arunit } })
+          ActiveRecord::Base.connects_to(shards: { default: { also_writing: :arunit }, one: { also_writing: :arunit } })
 
           assert_nothing_raised { setup_shared_connection_pool }
         ensure
@@ -95,7 +114,7 @@ module ActiveRecord
 
           @handler.establish_connection(:primary)
 
-          assert_not_deprecated do
+          assert_not_deprecated(ActiveRecord.deprecator) do
             @handler.retrieve_connection("primary")
             @handler.remove_connection_pool("primary")
           end
@@ -148,18 +167,6 @@ module ActiveRecord
           ENV["RAILS_ENV"] = previous_env
           ActiveRecord::Base.establish_connection(:arunit)
         end
-
-        def test_remove_connection_is_deprecated
-          expected = @handler.retrieve_connection_pool(@owner_name).db_config.configuration_hash
-
-          config_hash = assert_deprecated do
-            @handler.remove_connection(@owner_name)
-          end
-
-          assert_equal expected, config_hash
-        ensure
-          ActiveRecord::Base.establish_connection(:arunit)
-        end
       end
 
       def test_establish_connection_using_two_level_configurations
@@ -197,13 +204,13 @@ module ActiveRecord
           development: {
             primary: {
               adapter: "sqlite3",
-              database: "test/db/development.sqlite3",
+              database: "test/storage/development.sqlite3",
             },
           },
           test: {
             primary: {
               adapter: "sqlite3",
-              database: "test/db/test.sqlite3",
+              database: "test/storage/test.sqlite3",
             },
           },
         }
@@ -222,19 +229,19 @@ module ActiveRecord
       end
 
       def test_retrieve_connection
-        assert @handler.retrieve_connection(@owner_name)
+        assert @handler.retrieve_connection(@connection_name)
       end
 
       def test_active_connections?
-        assert_not_predicate @handler, :active_connections?
-        assert @handler.retrieve_connection(@owner_name)
-        assert_predicate @handler, :active_connections?
-        @handler.clear_active_connections!
-        assert_not_predicate @handler, :active_connections?
+        assert_not @handler.active_connections?(:all)
+        assert @handler.retrieve_connection(@connection_name)
+        assert @handler.active_connections?(:all)
+        @handler.clear_active_connections!(:all)
+        assert_not @handler.active_connections?(:all)
       end
 
       def test_retrieve_connection_pool
-        assert_not_nil @handler.retrieve_connection_pool(@owner_name)
+        assert_not_nil @handler.retrieve_connection_pool(@connection_name)
       end
 
       def test_retrieve_connection_pool_with_invalid_id
@@ -285,6 +292,7 @@ module ActiveRecord
         ActiveRecord::Base.connection_specification_name = "readonly"
         assert_equal "readonly", klassC.connection_specification_name
       ensure
+        ApplicationRecord.remove_connection
         Object.send :remove_const, :ApplicationRecord
         ActiveRecord::Base.connection_specification_name = "ActiveRecord::Base"
       end
@@ -402,7 +410,7 @@ module ActiveRecord
 
           pid = fork {
             rd.close
-            pool = @handler.retrieve_connection_pool(@owner_name)
+            pool = @handler.retrieve_connection_pool(@connection_name)
             wr.write Marshal.dump pool.schema_cache.size
             wr.close
             exit!
@@ -415,38 +423,38 @@ module ActiveRecord
           rd.close
         end
 
-        def test_pool_from_any_process_for_uses_most_recent_spec
-          skip unless current_adapter?(:SQLite3Adapter)
+        if current_adapter?(:SQLite3Adapter)
+          def test_pool_from_any_process_for_uses_most_recent_spec
+            file = Tempfile.new "lol.sqlite3"
 
-          file = Tempfile.new "lol.sqlite3"
+            rd, wr = IO.pipe
+            rd.binmode
+            wr.binmode
 
-          rd, wr = IO.pipe
-          rd.binmode
-          wr.binmode
+            pid = fork do
+              config_hash = ActiveRecord::Base.configurations.configs_for(env_name: "arunit", name: "primary").configuration_hash.merge(database: file.path)
+              ActiveRecord::Base.establish_connection(config_hash)
 
-          pid = fork do
-            config_hash = ActiveRecord::Base.configurations.configs_for(env_name: "arunit", name: "primary").configuration_hash.merge(database: file.path)
-            ActiveRecord::Base.establish_connection(config_hash)
+              pid2 = fork do
+                wr.write ActiveRecord::Base.connection_db_config.database
+                wr.close
+              end
 
-            pid2 = fork do
-              wr.write ActiveRecord::Base.connection_db_config.database
-              wr.close
+              Process.waitpid pid2
             end
 
-            Process.waitpid pid2
-          end
+            Process.waitpid pid
 
-          Process.waitpid pid
+            wr.close
 
-          wr.close
+            assert_equal file.path, rd.read
 
-          assert_equal file.path, rd.read
-
-          rd.close
-        ensure
-          if file
-            file.close
-            file.unlink
+            rd.close
+          ensure
+            if file
+              file.close
+              file.unlink
+            end
           end
         end
       end

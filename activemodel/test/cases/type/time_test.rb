@@ -10,6 +10,7 @@ module ActiveModel
         assert_nil type.cast(nil)
         assert_nil type.cast("")
         assert_nil type.cast("ABC")
+        assert_nil type.cast(" " * 129)
 
         time_string = ::Time.now.utc.strftime("%T")
         assert_equal time_string, type.cast(time_string).strftime("%T")
@@ -25,6 +26,7 @@ module ActiveModel
           assert_nil type.user_input_in_time_zone(nil)
           assert_nil type.user_input_in_time_zone("")
           assert_nil type.user_input_in_time_zone("ABC")
+          assert_nil type.user_input_in_time_zone(" " * 129)
 
           offset = ::Time.zone.formatted_offset
           time_string = "2015-02-09T19:45:54#{offset}"
@@ -32,6 +34,13 @@ module ActiveModel
           assert_equal 19, type.user_input_in_time_zone(time_string).hour
           assert_equal offset, type.user_input_in_time_zone(time_string).formatted_offset
         end
+      end
+
+      test "serialize_cast_value is equivalent to serialize after cast" do
+        type = Type::Time.new(precision: 1)
+        value = type.cast("1999-12-31T12:34:56.789-10:00")
+
+        assert_equal type.serialize(value), type.serialize_cast_value(value)
       end
     end
   end

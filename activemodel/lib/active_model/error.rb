@@ -121,9 +121,10 @@ module ActiveModel
     attr_reader :attribute
     # The type of error, defaults to +:invalid+ unless specified
     attr_reader :type
-    # The raw value provided as the second parameter when calling +errors#add+
+    # The raw value provided as the second parameter when calling
+    # <tt>errors#add</tt>
     attr_reader :raw_type
-    # The options provided when calling +errors#add+
+    # The options provided when calling <tt>errors#add</tt>
     attr_reader :options
 
     # Returns the error message.
@@ -159,7 +160,7 @@ module ActiveModel
       self.class.full_message(attribute, message, @base)
     end
 
-    # See if error matches provided +attribute+, +type+ and +options+.
+    # See if error matches provided +attribute+, +type+, and +options+.
     #
     # Omitted params are not checked for a match.
     def match?(attribute, type = nil, **options)
@@ -176,7 +177,7 @@ module ActiveModel
       true
     end
 
-    # See if error matches provided +attribute+, +type+ and +options+ exactly.
+    # See if error matches provided +attribute+, +type+, and +options+ exactly.
     #
     # All params must be equal to Error's own attributes to be considered a
     # strict match.

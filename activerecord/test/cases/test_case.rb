@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require "active_support/testing/strict_warnings"
 require "active_support"
 require "active_support/testing/autorun"
 require "active_support/testing/method_call_assertions"
@@ -7,6 +8,10 @@ require "active_support/testing/stream"
 require "active_record/fixtures"
 
 require "cases/validations_repair_helper"
+require_relative "../support/config"
+require_relative "../support/connection"
+require_relative "../support/adapter_helper"
+require_relative "../support/load_schema_helper"
 
 module ActiveRecord
   # = Active Record Test Case
@@ -17,6 +22,10 @@ module ActiveRecord
     include ActiveSupport::Testing::Stream
     include ActiveRecord::TestFixtures
     include ActiveRecord::ValidationsRepairHelper
+    include AdapterHelper
+    extend AdapterHelper
+    include LoadSchemaHelper
+    extend LoadSchemaHelper
 
     self.fixture_path = FIXTURES_ROOT
     self.use_instantiated_fixtures = false
@@ -38,8 +47,8 @@ module ActiveRecord
     end
 
     def assert_sql(*patterns_to_match, &block)
-      capture_sql(&block)
-    ensure
+      _assert_nothing_raised_or_warn("assert_sql") { capture_sql(&block) }
+
       failed_patterns = []
       patterns_to_match.each do |pattern|
         failed_patterns << pattern unless SQLCounter.log_all.any? { |sql| pattern === sql }
@@ -47,11 +56,11 @@ module ActiveRecord
       assert failed_patterns.empty?, "Query pattern(s) #{failed_patterns.map(&:inspect).join(', ')} not found.#{SQLCounter.log.size == 0 ? '' : "\nQueries:\n#{SQLCounter.log.join("\n")}"}"
     end
 
-    def assert_queries(num = 1, options = {})
+    def assert_queries(num = 1, options = {}, &block)
       ignore_none = options.fetch(:ignore_none) { num == :any }
       ActiveRecord::Base.connection.materialize_transactions
       SQLCounter.clear_log
-      x = yield
+      x = _assert_nothing_raised_or_warn("assert_queries", &block)
       the_log = ignore_none ? SQLCounter.log_all : SQLCounter.log
       if num == :any
         assert_operator the_log.size, :>=, 1, "1 or more queries expected, but none were executed."
@@ -68,16 +77,13 @@ module ActiveRecord
     end
 
     def assert_column(model, column_name, msg = nil)
-      assert has_column?(model, column_name), msg
+      model.reset_column_information
+      assert_includes model.column_names, column_name.to_s, msg
     end
 
     def assert_no_column(model, column_name, msg = nil)
-      assert_not has_column?(model, column_name), msg
-    end
-
-    def has_column?(model, column_name)
       model.reset_column_information
-      model.column_names.include?(column_name.to_s)
+      assert_not_includes model.column_names, column_name.to_s, msg
     end
 
     def with_has_many_inversing(model = ActiveRecord::Base)
@@ -134,6 +140,96 @@ module ActiveRecord
       adapter.datetime_type = datetime_type_was
       adapter.remove_instance_variable(:@native_database_types) if adapter.instance_variable_defined?(:@native_database_types)
     end
+
+    def with_env_tz(new_tz = "US/Eastern")
+      old_tz, ENV["TZ"] = ENV["TZ"], new_tz
+      yield
+    ensure
+      old_tz ? ENV["TZ"] = old_tz : ENV.delete("TZ")
+    end
+
+    def with_timezone_config(cfg)
+      verify_default_timezone_config
+
+      old_default_zone = ActiveRecord.default_timezone
+      old_awareness = ActiveRecord::Base.time_zone_aware_attributes
+      old_aware_types = ActiveRecord::Base.time_zone_aware_types
+      old_zone = Time.zone
+
+      if cfg.has_key?(:default)
+        ActiveRecord.default_timezone = cfg[:default]
+      end
+      if cfg.has_key?(:aware_attributes)
+        ActiveRecord::Base.time_zone_aware_attributes = cfg[:aware_attributes]
+      end
+      if cfg.has_key?(:aware_types)
+        ActiveRecord::Base.time_zone_aware_types = cfg[:aware_types]
+      end
+      if cfg.has_key?(:zone)
+        Time.zone = cfg[:zone]
+      end
+      yield
+    ensure
+      ActiveRecord.default_timezone = old_default_zone
+      ActiveRecord::Base.time_zone_aware_attributes = old_awareness
+      ActiveRecord::Base.time_zone_aware_types = old_aware_types
+      Time.zone = old_zone
+    end
+
+    # This method makes sure that tests don't leak global state related to time zones.
+    EXPECTED_ZONE = nil
+    EXPECTED_DEFAULT_TIMEZONE = :utc
+    EXPECTED_AWARE_TYPES = [:datetime, :time]
+    EXPECTED_TIME_ZONE_AWARE_ATTRIBUTES = false
+    def verify_default_timezone_config
+      if Time.zone != EXPECTED_ZONE
+        $stderr.puts <<-MSG
+    \n#{self}
+        Global state `Time.zone` was leaked.
+          Expected: #{EXPECTED_ZONE}
+          Got: #{Time.zone}
+        MSG
+      end
+      if ActiveRecord.default_timezone != EXPECTED_DEFAULT_TIMEZONE
+        $stderr.puts <<-MSG
+    \n#{self}
+        Global state `ActiveRecord.default_timezone` was leaked.
+          Expected: #{EXPECTED_DEFAULT_TIMEZONE}
+          Got: #{ActiveRecord.default_timezone}
+        MSG
+      end
+      if ActiveRecord::Base.time_zone_aware_attributes != EXPECTED_TIME_ZONE_AWARE_ATTRIBUTES
+        $stderr.puts <<-MSG
+    \n#{self}
+        Global state `ActiveRecord::Base.time_zone_aware_attributes` was leaked.
+          Expected: #{EXPECTED_TIME_ZONE_AWARE_ATTRIBUTES}
+          Got: #{ActiveRecord::Base.time_zone_aware_attributes}
+        MSG
+      end
+      if ActiveRecord::Base.time_zone_aware_types != EXPECTED_AWARE_TYPES
+        $stderr.puts <<-MSG
+    \n#{self}
+        Global state `ActiveRecord::Base.time_zone_aware_types` was leaked.
+          Expected: #{EXPECTED_AWARE_TYPES}
+          Got: #{ActiveRecord::Base.time_zone_aware_types}
+        MSG
+      end
+    end
+
+    def clean_up_connection_handler
+      handler = ActiveRecord::Base.connection_handler
+      handler.instance_variable_get(:@connection_name_to_pool_manager).each do |owner, pool_manager|
+        pool_manager.role_names.each do |role_name|
+          next if role_name == ActiveRecord::Base.default_role
+          pool_manager.remove_role(role_name)
+        end
+      end
+    end
+
+    # Connect to the database
+    ARTest.connect
+    # Load database schema
+    load_schema
   end
 
   class PostgreSQLTestCase < TestCase

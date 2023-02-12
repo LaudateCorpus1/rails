@@ -23,10 +23,16 @@ require "models/car"
 require "models/tyre"
 require "models/subscriber"
 require "models/non_primary_key"
+require "models/clothing_item"
 require "support/stubs/strong_parameters"
+require "support/async_helper"
 
 class FinderTest < ActiveRecord::TestCase
-  fixtures :companies, :topics, :entrants, :developers, :developers_projects, :posts, :comments, :accounts, :authors, :author_addresses, :customers, :categories, :categorizations, :cars
+  include AsyncHelper
+
+  fixtures :companies, :topics, :entrants, :developers, :developers_projects,
+    :posts, :comments, :accounts, :authors, :author_addresses, :customers,
+    :categories, :categorizations, :cars, :clothing_items
 
   def test_find_by_id_with_hash
     assert_nothing_raised do
@@ -47,6 +53,16 @@ class FinderTest < ActiveRecord::TestCase
   def test_find_with_hash_parameter
     assert_raises(ActiveRecord::RecordNotFound) { Post.find(foo: "bar") }
     assert_raises(ActiveRecord::RecordNotFound) { Post.find(foo: "bar", bar: "baz") }
+  end
+
+  def test_find_with_custom_select_excluding_id
+    # Returns ordered by ids array
+    topics = Topic.select(:title).find([4, 2, 5])
+    assert_equal [4, 2, 5], topics.map(&:id)
+
+    # Custom order
+    topics = Topic.select(:title).order(:id).find([4, 2, 5])
+    assert_equal [2, 4, 5], topics.map(&:id)
   end
 
   def test_find_with_proc_parameter_and_block
@@ -602,6 +618,8 @@ class FinderTest < ActiveRecord::TestCase
 
     assert_equal(1, topics.size)
     assert_equal(topics(:second).title, topics.first.title)
+
+    assert_async_equal topics,  Topic.async_find_by_sql("SELECT * FROM topics WHERE author_name = 'Mary'")
   end
 
   def test_find_with_prepared_select_statement
@@ -867,6 +885,17 @@ class FinderTest < ActiveRecord::TestCase
     end
   end
 
+  def test_nth_to_last_with_order_uses_limit
+    c = Topic.connection
+    assert_sql(/ORDER BY #{Regexp.escape(c.quote_table_name("topics.id"))} DESC LIMIT/i) do
+      Topic.second_to_last
+    end
+
+    assert_sql(/ORDER BY #{Regexp.escape(c.quote_table_name("topics.updated_at"))} DESC LIMIT/i) do
+      Topic.order(:updated_at).second_to_last
+    end
+  end
+
   def test_last_bang_present
     assert_nothing_raised do
       assert_equal topics(:second), Topic.where("title = 'The Second Topic of the day'").last!
@@ -1005,6 +1034,33 @@ class FinderTest < ActiveRecord::TestCase
     }
   ensure
     NonPrimaryKey.implicit_order_column = old_implicit_order_column
+  end
+
+  def test_implicit_order_column_reorders_query_constraints
+    c = ClothingItem.connection
+    ClothingItem.implicit_order_column = "color"
+    quoted_type = Regexp.escape(c.quote_table_name("clothing_items.clothing_type"))
+    quoted_color = Regexp.escape(c.quote_table_name("clothing_items.color"))
+
+    assert_sql(/ORDER BY #{quoted_color} ASC, #{quoted_type} ASC LIMIT/i) do
+      assert_kind_of ClothingItem, ClothingItem.first
+    end
+  ensure
+    ClothingItem.implicit_order_column = nil
+  end
+
+  def test_implicit_order_column_prepends_query_constraints
+    c = ClothingItem.connection
+    ClothingItem.implicit_order_column = "description"
+    quoted_type = Regexp.escape(c.quote_table_name("clothing_items.clothing_type"))
+    quoted_color = Regexp.escape(c.quote_table_name("clothing_items.color"))
+    quoted_descrption = Regexp.escape(c.quote_table_name("clothing_items.description"))
+
+    assert_sql(/ORDER BY #{quoted_descrption} ASC, #{quoted_type} ASC, #{quoted_color} ASC LIMIT/i) do
+      assert_kind_of ClothingItem, ClothingItem.first
+    end
+  ensure
+    ClothingItem.implicit_order_column = nil
   end
 
   def test_take_and_first_and_last_with_integer_should_return_an_array
@@ -1321,6 +1377,8 @@ class FinderTest < ActiveRecord::TestCase
     assert_equal(0, Entrant.count_by_sql("SELECT COUNT(*) FROM entrants WHERE id > 3"))
     assert_equal(1, Entrant.count_by_sql(["SELECT COUNT(*) FROM entrants WHERE id > ?", 2]))
     assert_equal(2, Entrant.count_by_sql(["SELECT COUNT(*) FROM entrants WHERE id > ?", 1]))
+
+    assert_async_equal 2, Entrant.async_count_by_sql(["SELECT COUNT(*) FROM entrants WHERE id > ?", 1])
   end
 
   def test_find_by_one_attribute
@@ -1700,6 +1758,26 @@ class FinderTest < ActiveRecord::TestCase
         Topic.eager_load(:replies).limit(1).skip_query_cache!.exists?
         Topic.eager_load(:replies).limit(1).skip_query_cache!.exists?
       end
+    end
+  end
+
+  test "#last for a model with composite query constraints" do
+    c = ClothingItem.connection
+    quoted_type = Regexp.escape(c.quote_table_name("clothing_items.clothing_type"))
+    quoted_color = Regexp.escape(c.quote_table_name("clothing_items.color"))
+
+    assert_sql(/ORDER BY #{quoted_type} DESC, #{quoted_color} DESC LIMIT/i) do
+      assert_kind_of ClothingItem, ClothingItem.last
+    end
+  end
+
+  test "#first for a model with composite query constraints" do
+    c = ClothingItem.connection
+    quoted_type = Regexp.escape(c.quote_table_name("clothing_items.clothing_type"))
+    quoted_color = Regexp.escape(c.quote_table_name("clothing_items.color"))
+
+    assert_sql(/ORDER BY #{quoted_type} ASC, #{quoted_color} ASC LIMIT/i) do
+      assert_kind_of ClothingItem, ClothingItem.first
     end
   end
 

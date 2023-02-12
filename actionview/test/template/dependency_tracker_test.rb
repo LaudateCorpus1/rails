@@ -115,8 +115,8 @@ module SharedTrackerTests
 
   def test_finds_dependency_on_multiline_render_calls
     template = FakeTemplate.new("<%=
-      render :object => @all_posts,
-             :partial => 'posts' %>", :erb)
+      render object: @all_posts,
+             partial: 'posts' %>", :erb)
 
     tracker = make_tracker("some/_little_posts", template)
 
@@ -194,6 +194,18 @@ module SharedTrackerTests
       "messages/message",
       "events/event",
       "comments/comment"
+    ], tracker.dependencies
+  end
+
+  def test_finds_dependencies_with_bare_assoc_hash_on_constant
+    template = FakeTemplate.new(%{
+      <%= render SomeConstant.message(this: "that") %>
+    }, :erb)
+
+    tracker = make_tracker("assoc_hash/const", template)
+
+    assert_equal [
+      "messages/message",
     ], tracker.dependencies
   end
 

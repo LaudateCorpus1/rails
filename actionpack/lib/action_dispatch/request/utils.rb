@@ -55,9 +55,11 @@ module ActionDispatch
             if params.has_key?(:tempfile)
               ActionDispatch::Http::UploadedFile.new(params)
             else
-              params.transform_values do |val|
-                normalize_encode_params(val)
-              end.with_indifferent_access
+              hwia = ActiveSupport::HashWithIndifferentAccess.new
+              params.each_pair do |key, val|
+                hwia[key] = normalize_encode_params(val)
+              end
+              hwia
             end
           else
             params
@@ -83,6 +85,9 @@ module ActionDispatch
           return params unless controller && controller.valid_encoding? && encoding_template = action_encoding_template(request, controller, action)
           params.except(:controller, :action).each do |key, value|
             ActionDispatch::Request::Utils.each_param_value(value) do |param|
+              # If `param` is frozen, it comes from the router defaults
+              next if param.frozen?
+
               if encoding_template[key.to_s]
                 param.force_encoding(encoding_template[key.to_s])
               end

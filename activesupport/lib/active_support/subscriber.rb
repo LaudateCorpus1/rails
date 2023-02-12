@@ -126,38 +126,18 @@ module ActiveSupport
     attr_reader :patterns # :nodoc:
 
     def initialize
-      @queue_key = [self.class.name, object_id].join "-"
       @patterns  = {}
       super
     end
 
-    def start(name, id, payload)
-      event = ActiveSupport::Notifications::Event.new(name, nil, nil, id, payload)
-      event.start!
-      parent = event_stack.last
-      parent << event if parent
-
-      event_stack.push event
-    end
-
-    def finish(name, id, payload)
-      event = event_stack.pop
-      event.finish!
-      event.payload.merge!(payload)
-
-      method = name.split(".").first
+    def call(event)
+      method = event.name[0, event.name.index(".")]
       send(method, event)
     end
 
     def publish_event(event) # :nodoc:
-      method = event.name.split(".").first
+      method = event.name[0, event.name.index(".")]
       send(method, event)
     end
-
-    private
-      def event_stack
-        registry = ActiveSupport::IsolatedExecutionState[:active_support_subscriber_queue_registry] ||= {}
-        registry[@queue_key] ||= []
-      end
   end
 end

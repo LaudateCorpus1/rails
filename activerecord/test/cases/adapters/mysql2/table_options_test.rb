@@ -32,7 +32,7 @@ class Mysql2TableOptionsTest < ActiveRecord::Mysql2TestCase
   test "table options with CHARSET" do
     @connection.create_table "mysql_table_options", force: true, options: "CHARSET=latin1"
     output = dump_table_schema("mysql_table_options")
-    expected = /create_table "mysql_table_options", charset: "latin1", force: :cascade/
+    expected = /create_table "mysql_table_options", charset: "latin1"(?:, collation: "\w+")?, force: :cascade/
     assert_match expected, output
   end
 
@@ -94,7 +94,7 @@ class Mysql2DefaultEngineOptionTest < ActiveRecord::Mysql2TestCase
     ActiveRecord::Base.logger       = @logger_was
     ActiveRecord::Migration.verbose = @verbose_was
     ActiveRecord::Base.connection.drop_table "mysql_table_options", if_exists: true
-    ActiveRecord::SchemaMigration.delete_all rescue nil
+    ActiveRecord::Base.connection.schema_migration.delete_all_versions rescue nil
   end
 
   test "new migrations do not contain default ENGINE=InnoDB option" do
@@ -114,7 +114,8 @@ class Mysql2DefaultEngineOptionTest < ActiveRecord::Mysql2TestCase
       end
     end.new
 
-    ActiveRecord::Migrator.new(:up, [migration], ActiveRecord::Base.connection.schema_migration).migrate
+    connection = ActiveRecord::Base.connection
+    ActiveRecord::Migrator.new(:up, [migration], connection.schema_migration, connection.internal_metadata).migrate
 
     assert_match %r{ENGINE=InnoDB}, @log.string
 

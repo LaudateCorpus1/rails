@@ -38,14 +38,14 @@ module ActiveRecord
     #   the returned list. Most of the time we're only iterating over the write
     #   connection (i.e. migrations don't need to run for the write and read connection).
     #   Defaults to +false+.
-    # * <tt>include_hidden:</tte Determines whether to include replicas and configurations
+    # * <tt>include_hidden:</tt> Determines whether to include replicas and configurations
     #   hidden by +database_tasks: false+ in the returned list. Most of the time we're only
     #   iterating over the primary connections (i.e. migrations don't need to run for the
     #   write and read connection). Defaults to +false+.
     def configs_for(env_name: nil, name: nil, include_replicas: false, include_hidden: false)
       if include_replicas
         include_hidden = include_replicas
-        ActiveSupport::Deprecation.warn("The kwarg `include_replicas` is deprecated in favor of `include_hidden`. When `include_hidden` is passed, configurations with `replica: true` or `database_tasks: false` will be returned. `include_replicas` will be removed in Rails 7.1.")
+        ActiveRecord.deprecator.warn("The kwarg `include_replicas` is deprecated in favor of `include_hidden`. When `include_hidden` is passed, configurations with `replica: true` or `database_tasks: false` will be returned. `include_replicas` will be removed in Rails 7.1.")
       end
 
       env_name ||= default_env if name

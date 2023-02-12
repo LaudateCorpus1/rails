@@ -255,7 +255,7 @@ git commit: "-a -m 'Initial commit'"
 ### after_bundle(&block)
 
 Registers a callback to be executed after the gems are bundled and binstubs
-are generated. Useful for all generated files to version control:
+are generated. Useful for adding generated files to version control:
 
 ```ruby
 after_bundle do
@@ -272,7 +272,7 @@ Advanced Usage
 
 The application template is evaluated in the context of a
 `Rails::Generators::AppGenerator` instance. It uses the
-[`apply`](https://rdoc.info/github/wycats/thor/Thor/Actions#apply-instance_method)
+[`apply`](https://www.rubydoc.info/gems/thor/Thor/Actions#apply-instance_method)
 action provided by Thor.
 
 This means you can extend and change the instance to match your needs.

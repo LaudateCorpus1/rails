@@ -16,7 +16,7 @@ After reading this guide, you will know:
 
 --------------------------------------------------------------------------------
 
-Introduction to instrumentation
+Introduction to Instrumentation
 -------------------------------
 
 The instrumentation API provided by Active Support allows developers to provide hooks which other developers may hook into. There are several of these within the [Rails framework](#rails-framework-hooks). With this API, developers can choose to be notified when certain events occur inside their application or another piece of Ruby code.
@@ -25,7 +25,7 @@ For example, there is a hook provided within Active Record that is called every 
 
 You are even able to [create your own events](#creating-custom-events) inside your application which you can later subscribe to.
 
-Subscribing to an event
+Subscribing to an Event
 -----------------------
 
 Subscribing to an event is easy. Use `ActiveSupport::Notifications.subscribe` with a block to
@@ -256,10 +256,10 @@ INFO. Additional keys may be added by the caller.
 
 #### unpermitted_parameters.action_controller
 
-| Key           | Value                                                                 |
-| ------------- | --------------------------------------------------------------------- |
-| `:keys`       | The unpermitted keys                                                  |
-| `:context`    | Hash with the following keys: :controller, :action, :params, :request |
+| Key           | Value                                                                         |
+| ------------- | ----------------------------------------------------------------------------- |
+| `:keys`       | The unpermitted keys                                                          |
+| `:context`    | Hash with the following keys: `:controller`, `:action`, `:params`, `:request` |
 
 ### Action Dispatch
 
@@ -269,31 +269,49 @@ INFO. Additional keys may be added by the caller.
 | ------------- | ---------------------- |
 | `:middleware` | Name of the middleware |
 
+#### redirect.action_dispatch
+
+| Key         | Value                         |
+| ----------- | ----------------------------- |
+| `:status`   | HTTP response code            |
+| `:location` | URL to redirect to            |
+| `:request`  | The `ActionDispatch::Request` |
+
+#### request.action_dispatch
+
+| Key         | Value                         |
+| ----------- | ----------------------------- |
+| `:request`  | The `ActionDispatch::Request` |
+
 ### Action View
 
 #### render_template.action_view
 
-| Key           | Value                 |
-| ------------- | --------------------- |
-| `:identifier` | Full path to template |
-| `:layout`     | Applicable layout     |
+| Key           | Value                              |
+| ------------- | ---------------------------------- |
+| `:identifier` | Full path to template              |
+| `:layout`     | Applicable layout                  |
+| `:locals`     | Local variables passed to template |
 
 ```ruby
 {
   identifier: "/Users/adam/projects/notifications/app/views/posts/index.html.erb",
-  layout: "layouts/application"
+  layout: "layouts/application",
+  locals: {foo: "bar"}
 }
 ```
 
 #### render_partial.action_view
 
-| Key           | Value                 |
-| ------------- | --------------------- |
-| `:identifier` | Full path to template |
+| Key           | Value                              |
+| ------------- | ---------------------------------- |
+| `:identifier` | Full path to template              |
+| `:locals`     | Local variables passed to template |
 
 ```ruby
 {
-  identifier: "/Users/adam/projects/notifications/app/views/posts/_form.html.erb"
+  identifier: "/Users/adam/projects/notifications/app/views/posts/_form.html.erb",
+  locals: {foo: "bar"}
 }
 ```
 
@@ -312,6 +330,19 @@ INFO. Additional keys may be added by the caller.
   identifier: "/Users/adam/projects/notifications/app/views/posts/_post.html.erb",
   count: 3,
   cache_hits: 0
+}
+```
+
+#### render_layout.action_view
+
+| Key           | Value                 |
+| ------------- | --------------------- |
+| `:identifier` | Full path to template |
+
+
+```ruby
+{
+  identifier: "/Users/adam/projects/notifications/app/views/layouts/application.html.erb"
 }
 ```
 
@@ -341,6 +372,15 @@ INFO. The adapters will add their own data as well.
   statement_name: nil
 }
 ```
+
+#### strict_loading_violation.active_record
+
+| Key           | Value                                            |
+| ------------- | ------------------------------------------------ |
+| `:owner`      | Model with `strict_loading` enabled              |
+| `:reflection` | Reflection of the association that tried to load |
+
+INFO. This event is only emitted when `config.active_record.action_on_strict_loading_violation` is set to `:log`.
 
 #### instantiation.active_record
 
@@ -406,12 +446,12 @@ INFO. The adapters will add their own data as well.
 
 #### cache_read.active_support
 
-| Key                | Value                                             |
-| ------------------ | ------------------------------------------------- |
-| `:key`             | Key used in the store                             |
-| `:store`           | Name of the store class                           |
-| `:hit`             | If this read is a hit                             |
-| `:super_operation` | :fetch is added when a read is used with `#fetch` |
+| Key                | Value                                               |
+| ------------------ | --------------------------------------------------- |
+| `:key`             | Key used in the store                               |
+| `:store`           | Name of the store class                             |
+| `:hit`             | If this read is a hit                               |
+| `:super_operation` | `:fetch` is added when a read is used with `#fetch` |
 
 #### cache_generate.active_support
 
@@ -527,10 +567,11 @@ INFO. Cache stores may add their own keys
 
 #### perform.active_job
 
-| Key          | Value                                  |
-| ------------ | -------------------------------------- |
-| `:adapter`   | QueueAdapter object processing the job |
-| `:job`       | Job object                             |
+| Key           | Value                                         |
+| ------------- | --------------------------------------------- |
+| `:adapter`    | QueueAdapter object processing the job        |
+| `:job`        | Job object                                    |
+| `:db_runtime` | Amount spent executing database queries in ms |
 
 #### retry_stopped.active_job
 
@@ -673,6 +714,26 @@ INFO. The only ActiveStorage service that provides this hook so far is GCS.
 | ------------ | ------------------------------ |
 | `:analyzer`  | Name of analyzer e.g., ffprobe |
 
+### Action Mailbox
+
+#### process.action_mailbox
+
+| Key              | Value                                                             |
+| -----------------| ----------------------------------------------------------------- |
+| `:mailbox`       | Instance of the Mailbox class inheriting from ActionMailbox::Base |
+| `:inbound_email` | Hash with data about the inbound email being processed            |
+
+```ruby
+{
+  mailbox: #<RepliesMailbox:0x00007f9f7a8388>,
+  inbound_email: {
+    id: 1,
+    message_id: "0CB459E0-0336-41DA-BC88-E6E28C697DDB@37signals.com",
+    status: "processing"
+  }
+}
+```
+
 ### Railties
 
 #### load_config_initializer.railties
@@ -685,10 +746,14 @@ INFO. The only ActiveStorage service that provides this hook so far is GCS.
 
 #### deprecation.rails
 
-| Key          | Value                           |
-| ------------ | ------------------------------- |
-| `:message`   | The deprecation warning         |
-| `:callstack` | Where the deprecation came from |
+| Key                    | Value                                                 |
+| ---------------------- | ------------------------------------------------------|
+| `:message`             | The deprecation warning                               |
+| `:callstack`           | Where the deprecation came from                       |
+| `:gem_name`            | Name of the gem reporting the deprecation             |
+| `:deprecation_horizon` | Version where the deprecated behavior will be removed |
+
+NOTE: Each framework will also emit their own namespaced `deprecation` events.
 
 Exceptions
 ----------
@@ -701,7 +766,7 @@ information about it.
 | `:exception`        | An array of two elements. Exception class name and the message |
 | `:exception_object` | The exception object                                           |
 
-Creating custom events
+Creating Custom Events
 ----------------------
 
 Adding your own events is easy as well. `ActiveSupport::Notifications` will take care of

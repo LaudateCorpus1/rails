@@ -1,289 +1,224 @@
-*   Support `fields model: [@nested, @model]` the same way as `form_with model:
-    [@nested, @model]`.
+*   Guard `token_list` calls from escaping HTML too often
 
     *Sean Doyle*
 
-*   Infer HTTP verb `[method]` from a model or Array with model as the first
-    argument to `button_to` when combined with a block:
+*   `select` can now be called with a single hash containing options and some HTML options
 
-    ```ruby
-    button_to(Workshop.find(1)){ "Update" }
-    #=> <form method="post" action="/workshops/1" class="button_to">
-    #=>   <input type="hidden" name="_method" value="patch" autocomplete="off" />
-    #=>   <button type="submit">Update</button>
-    #=> </form>
+    Previously this would not work as expected:
 
-    button_to([ Workshop.find(1), Session.find(1) ]) { "Update" }
-    #=> <form method="post" action="/workshops/1/sessions/1" class="button_to">
-    #=>   <input type="hidden" name="_method" value="patch" autocomplete="off" />
-    #=>   <button type="submit">Update</button>
-    #=> </form>
+    ```erb
+    <%= select :post, :author, authors, required: true %>
     ```
 
-    *Sean Doyle*
+    Instead you needed to do this:
 
-*   Support passing a Symbol as the first argument to `FormBuilder#button`:
-
-    ```ruby
-    form.button(:draft, value: true)
-    # => <button name="post[draft]" value="true" type="submit">Create post</button>
-
-    form.button(:draft, value: true) do
-      content_tag(:strong, "Save as draft")
-    end
-    # =>  <button name="post[draft]" value="true" type="submit">
-    #       <strong>Save as draft</strong>
-    #     </button>
+    ```erb
+    <%= select :post, :author, authors, {}, required: true %>
     ```
 
-    *Sean Doyle*
-
-*   Introduce the `field_name` view helper, along with the
-    `FormBuilder#field_name` counterpart:
-
-    ```ruby
-    form_for @post do |f|
-      f.field_tag :tag, name: f.field_name(:tag, multiple: true)
-      # => <input type="text" name="post[tag][]">
-    end
-    ```
-
-    *Sean Doyle*
-
-*   Execute the `ActionView::Base.field_error_proc` within the context of the
-    `ActionView::Base` instance:
-
-    ```ruby
-    config.action_view.field_error_proc = proc { |html| content_tag(:div, html, class: "field_with_errors") }
-    ```
-
-    *Sean Doyle*
-
-*   Add support for `button_to ..., authenticity_token: false`
-
-    ```ruby
-    button_to "Create", Post.new, authenticity_token: false
-    # => <form class="button_to" method="post" action="/posts"><button type="submit">Create</button></form>
-
-    button_to "Create", Post.new, authenticity_token: true
-    # => <form class="button_to" method="post" action="/posts"><button type="submit">Create</button><input type="hidden" name="form_token" value="abc123..." autocomplete="off" /></form>
-
-    button_to "Create", Post.new, authenticity_token: "secret"
-    # => <form class="button_to" method="post" action="/posts"><button type="submit">Create</button><input type="hidden" name="form_token" value="secret" autocomplete="off" /></form>
-    ```
-
-    *Sean Doyle*
-
-*   Support rendering `<form>` elements _without_ `[action]` attributes by:
-
-    * `form_with url: false` or `form_with ..., html: { action: false }`
-    * `form_for ..., url: false` or `form_for ..., html: { action: false }`
-    * `form_tag false` or `form_tag ..., action: false`
-    * `button_to "...", false` or `button_to(false) { ... }`
-
-    *Sean Doyle*
-
-*   Add `:day_format` option to `date_select`
-
-        date_select("article", "written_on", day_format: ->(day) { day.ordinalize })
-        # generates day options like <option value="1">1st</option>\n<option value="2">2nd</option>...
-
-    *Shunichi Ikegami*
-
-*   Allow `link_to` helper to infer link name from `Model#to_s` when it
-    is used with a single argument:
-
-        link_to @profile
-        #=> <a href="/profiles/1">Eileen</a>
-
-    This assumes the model class implements a `to_s` method like this:
-
-        class Profile < ApplicationRecord
-          # ...
-          def to_s
-            name
-          end
-        end
-
-    Previously you had to supply a second argument even if the `Profile`
-    model implemented a `#to_s` method that called the `name` method.
-
-        link_to @profile, @profile.name
-        #=> <a href="/profiles/1">Eileen</a>
-
-    *Olivier Lacan*
-
-*   Support svg unpaired tags for `tag` helper.
-
-        tag.svg { tag.use('href' => "#cool-icon") }
-        # => <svg><use href="#cool-icon"></svg>
-
-    *Oleksii Vasyliev*
-
-
-## Rails 7.0.0.alpha2 (September 15, 2021) ##
-
-*   No changes.
-
-
-## Rails 7.0.0.alpha1 (September 15, 2021) ##
-
-*   Improves the performance of ActionView::Helpers::NumberHelper formatters by avoiding the use of
-    exceptions as flow control.
-
-    *Mike Dalessio*
-
-*   `preload_link_tag` properly inserts `as` attributes for files with `image` MIME types, such as JPG or SVG.
-
-    *Nate Berkopec*
-
-*   Add `weekday_options_for_select` and `weekday_select` helper methods. Also adds `weekday_select` to `FormBuilder`.
-
-    *Drew Bragg*, *Dana Kashubeck*, *Kasper Timm Hansen*
-
-*   Add `caching?` helper that returns whether the current code path is being cached and `uncacheable!` to denote helper methods that can't participate in fragment caching.
-
-    *Ben Toews*, *John Hawthorn*, *Kasper Timm Hansen*, *Joel Hawksley*
-
-*   Add `include_seconds` option for `time_field`.
-
-        <%= form.time_field :foo, include_seconds: false %>
-        # => <input value="16:22" type="time" />
-
-    Default includes seconds:
-
-        <%= form.time_field :foo %>
-        # => <input value="16:22:01.440" type="time" />
-
-    This allows you to take advantage of [different rendering options](https://developer.mozilla.org/en-US/docs/Web/HTML/Element/input/time#time_value_format) in some browsers.
+    Now, either form is accepted, for the following HTML attributes: `required`, `multiple`, `size`.
 
     *Alex Ghiculescu*
 
-*   Improve error messages when template file does not exist at absolute filepath.
+*   Datetime form helpers (`time_field`, `date_field`, `datetime_field`, `week_field`, `month_field`) now accept an instance of Time/Date/DateTime as `:value` option.
 
-    *Ted Whang*
+    Before:
+    ```erb
+    <%= form.datetime_field :written_at, value: Time.current.strftime("%Y-%m-%dT%T") %>
+    ```
 
-*   Add `:country_code` option to `sms_to` for consistency with `phone_to`.
+    After:
+    ```erb
+    <%= form.datetime_field :written_at, value: Time.current %>
+    ```
 
-    *Jonathan Hefner*
+    *Andrey Samsonov*
 
-*   OpenSSL constants are now used for Digest computations.
+*   Choices of `select` can optionally contain html attributes as the last element
+    of the child arrays when using grouped/nested collections
 
-    *Dirkjan Bussink*
+    ```erb
+    <%= form.select :foo, [["North America", [["United States","US"],["Canada","CA"]], { disabled: "disabled" }]] %>
+    # => <select><optgroup label="North America" disabled="disabled"><option value="US">United States</option><option value="CA">Canada</option></optgroup></select>
+    ```
 
-*   The `translate` helper now passes `default` values that aren't
-    translation keys through `I18n.translate` for interpolation.
+    *Chris Gunther*
 
-    *Jonathan Hefner*
+*   `check_box_tag` and `radio_button_tag` now accept `checked` as a keyword argument
 
-*   Adds option `extname` to `stylesheet_link_tag` to skip default
-    `.css` extension appended to the stylesheet path.
+    This is to make the API more consistent with the `FormHelper` variants. You can now
+    provide `checked` as a positional or keyword argument:
+
+    ```erb
+    = check_box_tag "admin", "1", false
+    = check_box_tag "admin", "1", checked: false
+
+    = radio_button_tag 'favorite_color', 'maroon', false
+    = radio_button_tag 'favorite_color', 'maroon', checked: false
+    ```
+
+    *Alex Ghiculescu*
+
+*   Allow passing a class to `dom_id`.
+    You no longer need to call `new` when passing a class to `dom_id`.
+    This makes `dom_id` behave like `dom_class` in this regard.
+    Apart from saving a few keystrokes, it prevents Ruby from needing
+    to instantiate a whole new object just to generate a string.
+
+    Before:
+    ```ruby
+    dom_id(Post) # => NoMethodError: undefined method `to_key' for Post:Class
+    ```
+
+    After:
+    ```ruby
+    dom_id(Post) # => "new_post"
+    ```
+
+    *Goulven Champenois*
+
+*   Report `:locals` as part of the data returned by ActionView render instrumentation.
+
+    Before:
+    ```ruby
+    {
+    identifier: "/Users/adam/projects/notifications/app/views/posts/index.html.erb",
+    layout: "layouts/application"
+    }
+    ```
+
+    After:
+    ```ruby
+    {
+    identifier: "/Users/adam/projects/notifications/app/views/posts/index.html.erb",
+    layout: "layouts/application",
+    locals: {foo: "bar"}
+    }
+    ```
+
+    *Aaron Gough*
+
+*   Strip `break_sequence` at the end of `word_wrap`.
+
+    This fixes a bug where `word_wrap` didn't properly strip off break sequences that had printable characters.
+
+    For example, compare the outputs of this template:
+
+    ```erb
+    # <%= word_wrap("11 22\n33 44", line_width: 2, break_sequence: "\n# ") %>
+    ```
 
     Before:
 
-    ```ruby
-    stylesheet_link_tag "style.less"
-    # <link href="/stylesheets/style.less.scss" rel="stylesheet">
+    ```
+    # 11
+    # 22
+    #
+    # 33
+    # 44
+    #
     ```
 
     After:
 
-    ```ruby
-    stylesheet_link_tag "style.less", extname: false, skip_pipeline: true, rel: "stylesheet/less"
-    # <link href="/stylesheets/style.less" rel="stylesheet/less">
+    ```
+    # 11
+    # 22
+    # 33
+    # 44
     ```
 
-    *Abhay Nikam*
+    *Max Chernyak*
 
-*   Deprecate `render` locals to be assigned to instance variables.
+*   Allow templates to set strict `locals`.
 
-    *Petrik de Heus*
+    By default, templates will accept any `locals` as keyword arguments. To define what `locals` a template accepts, add a `locals` magic comment:
 
-*   Remove legacy default `media=screen` from `stylesheet_link_tag`.
+    ```erb
+    <%# locals: (message:) -%>
+    <%= message %>
+    ```
 
-    *André Luis Leal Cardoso Junior*
+    Default values can also be provided:
 
-*   Change `ActionView::Helpers::FormBuilder#button` to transform `formmethod`
-    attributes into `_method="$VERB"` Form Data to enable varied same-form actions:
+    ```erb
+    <%# locals: (message: "Hello, world!") -%>
+    <%= message %>
+    ```
 
-        <%= form_with model: post, method: :put do %>
-          <%= form.button "Update" %>
-          <%= form.button "Delete", formmethod: :delete %>
-        <% end %>
-        <%# => <form action="posts/1">
-            =>   <input type="hidden" name="_method" value="put">
-            =>   <button type="submit">Update</button>
-            =>   <button type="submit" formmethod="post" name="_method" value="delete">Delete</button>
-            => </form>
-        %>
+    Or `locals` can be disabled entirely:
 
-    *Sean Doyle*
+    ```erb
+    <%# locals: () %>
+    ```
 
-*   Change `ActionView::Helpers::UrlHelper#button_to` to *always* render a
-    `<button>` element, regardless of whether or not the content is passed as
-    the first argument or as a block.
+    *Joel Hawksley*
 
-        <%= button_to "Delete", post_path(@post), method: :delete %>
-        # => <form action="/posts/1"><input type="hidden" name="_method" value="delete"><button type="submit">Delete</button></form>
+*   Add `include_seconds` option for `datetime_local_field`
 
-        <%= button_to post_path(@post), method: :delete do %>
-          Delete
-        <% end %>
-        # => <form action="/posts/1"><input type="hidden" name="_method" value="delete"><button type="submit">Delete</button></form>
+    This allows to omit seconds part in the input field, by passing `include_seconds: false`
 
-    *Sean Doyle*, *Dusan Orlovic*
+    *Wojciech Wnętrzak*
 
-*   Add `config.action_view.preload_links_header` to allow disabling of
-    the `Link` header being added by default when using `stylesheet_link_tag`
-    and `javascript_include_tag`.
+*   Guard against `ActionView::Helpers::FormTagHelper#field_name` calls with nil
+    `object_name` arguments. For example:
 
-    *Andrew White*
-
-*   The `translate` helper now resolves `default` values when a `nil` key is
-    specified, instead of always returning `nil`.
-
-    *Jonathan Hefner*
-
-*   Add `config.action_view.image_loading` to configure the default value of
-    the `image_tag` `:loading` option.
-
-    By setting `config.action_view.image_loading = "lazy"`, an application can opt in to
-    lazy loading images sitewide, without changing view code.
-
-    *Jonathan Hefner*
-
-*   `ActionView::Helpers::FormBuilder#id` returns the value
-    of the `<form>` element's `id` attribute. With a `method` argument, returns
-    the `id` attribute for a form field with that name.
-
-        <%= form_for @post do |f| %>
-          <%# ... %>
-
-          <% content_for :sticky_footer do %>
-            <%= form.button(form: f.id) %>
-          <% end %>
-        <% end %>
+    ```erb
+    <%= fields do |f| %>
+      <%= f.field_name :body %>
+    <% end %>
+    ```
 
     *Sean Doyle*
 
-*   `ActionView::Helpers::FormBuilder#field_id` returns the value generated by
-    the FormBuilder for the given attribute name.
+*   Strings returned from `strip_tags` are correctly tagged `html_safe?`
 
-        <%= form_for @post do |f| %>
-          <%= f.label :title %>
-          <%= f.text_field :title, aria: { describedby: f.field_id(:title, :error) } %>
-          <%= tag.span("is blank", id: f.field_id(:title, :error) %>
-        <% end %>
+    Because these strings contain no HTML elements and the basic entities are escaped, they are safe
+    to be included as-is as PCDATA in HTML content. Tagging them as html-safe avoids double-escaping
+    entities when being concatenated to a SafeBuffer during rendering.
 
-    *Sean Doyle*
+    Fixes [rails/rails-html-sanitizer#124](https://github.com/rails/rails-html-sanitizer/issues/124)
 
-*   Add `tag.attributes` to transform a Hash into HTML Attributes, ready to be
-    interpolated into ERB.
+    *Mike Dalessio*
 
-        <input <%= tag.attributes(type: :text, aria: { label: "Search" }) %> >
-        # => <input type="text" aria-label="Search">
+*   Move `convert_to_model` call from `form_for` into `form_with`
+
+    Now that `form_for` is implemented in terms of `form_with`, remove the
+    `convert_to_model` call from `form_for`.
 
     *Sean Doyle*
 
+*   Fix and add protections for XSS in `ActionView::Helpers` and `ERB::Util`.
 
-Please check [6-1-stable](https://github.com/rails/rails/blob/6-1-stable/actionview/CHANGELOG.md) for previous changes.
+    Escape dangerous characters in names of tags and names of attributes in the
+    tag helpers, following the XML specification. Rename the option
+    `:escape_attributes` to `:escape`, to simplify by applying the option to the
+    whole tag.
+
+    *Álvaro Martín Fraguas*
+
+*   Extend audio_tag and video_tag to accept Active Storage attachments.
+
+    Now it's possible to write
+
+    ```ruby
+    audio_tag(user.audio_file)
+    video_tag(user.video_file)
+    ```
+
+    Instead of
+
+    ```ruby
+    audio_tag(polymorphic_path(user.audio_file))
+    video_tag(polymorphic_path(user.video_file))
+    ```
+
+    `image_tag` already supported that, so this follows the same pattern.
+
+    *Matheus Richard*
+
+*   Ensure models passed to `form_for` attempt to call `to_model`.
+
+    *Sean Doyle*
+
+Please check [7-0-stable](https://github.com/rails/rails/blob/7-0-stable/actionview/CHANGELOG.md) for previous changes.

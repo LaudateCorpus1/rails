@@ -9,6 +9,7 @@ require "jobs/logging_job"
 require "jobs/nested_job"
 require "jobs/rescue_job"
 require "jobs/raising_job"
+require "jobs/retry_job"
 require "jobs/inherited_job"
 require "jobs/multiple_kwargs_job"
 require "models/person"
@@ -514,7 +515,7 @@ class EnqueuedJobsTest < ActiveJob::TestCase
     end
 
     assert_instance_of LoggingJob, job
-    assert_in_delta 5.minutes.from_now, job.scheduled_at, 1
+    assert_in_delta 5.minutes.from_now.to_f, job.scheduled_at, 1
     assert_equal "default", job.queue_name
     assert_equal [1, 2, 3, { keyword: true }], job.arguments
   end
@@ -524,7 +525,7 @@ class EnqueuedJobsTest < ActiveJob::TestCase
     job = assert_enqueued_with(job: LoggingJob)
 
     assert_instance_of LoggingJob, job
-    assert_in_delta 5.minutes.from_now, job.scheduled_at, 1
+    assert_in_delta 5.minutes.from_now.to_f, job.scheduled_at, 1
     assert_equal "default", job.queue_name
     assert_equal [1, 2, 3, { keyword: true }], job.arguments
   end
@@ -2025,6 +2026,14 @@ class PerformedJobsTest < ActiveJob::TestCase
 
     assert_equal 0, queue_adapter.enqueued_jobs.count
     assert_equal 2, queue_adapter.performed_jobs.count
+  end
+
+  test "perform_enqueued_jobs doesn't raise if discard_on ActiveJob::DeserializationError" do
+    RetryJob.perform_later Person.new(404), 1
+
+    assert_nothing_raised do
+      perform_enqueued_jobs(only: RetryJob)
+    end
   end
 
   test "TestAdapter respect max attempts" do

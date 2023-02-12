@@ -1,126 +1,126 @@
-*   Remove support to Marshal load Rails 5.x `ActiveModel::AttributeSet` format.
+*   Raise `NoMethodError` in `ActiveModel::Type::Value#as_json` to avoid unpredictable
+    results.
 
-    *Rafael Mendonça França*
+    *Vasiliy Ermolovich*
 
-*   Remove support to Marshal and YAML load Rails 5.x error format.
+*   Custom attribute types that inherit from Active Model built-in types and do
+    not override the `serialize` method will now benefit from an optimization
+    when serializing attribute values for the database.
 
-    *Rafael Mendonça França*
+    For example, with a custom type like the following:
 
-*   Remove deprecated support to use `[]=` in `ActiveModel::Errors#messages`.
+    ```ruby
+    class DowncasedString < ActiveModel::Type::String
+      def cast(value)
+        super&.downcase
+      end
+    end
 
-    *Rafael Mendonça França*
+    ActiveRecord::Type.register(:downcased_string, DowncasedString)
 
-*   Remove deprecated support to `delete` errors from `ActiveModel::Errors#messages`.
+    class User < ActiveRecord::Base
+      attribute :email, :downcased_string
+    end
 
-    *Rafael Mendonça França*
+    user = User.new(email: "FooBar@example.com")
+    ```
 
-*   Remove deprecated support to `clear` errors from `ActiveModel::Errors#messages`.
+    Serializing the `email` attribute for the database will be roughly twice as
+    fast.  More expensive `cast` operations will likely see greater improvements.
 
-    *Rafael Mendonça França*
+    *Jonathan Hefner*
 
-*   Remove deprecated support concat errors to `ActiveModel::Errors#messages`.
+*   `has_secure_password` now supports password challenges via a
+    `password_challenge` accessor and validation.
 
-    *Rafael Mendonça França*
+    A password challenge is a safeguard to verify that the current user is
+    actually the password owner.  It can be used when changing sensitive model
+    fields, such as the password itself.  It is different than a password
+    confirmation, which is used to prevent password typos.
 
-*   Remove deprecated `ActiveModel::Errors#to_xml`.
+    When `password_challenge` is set, the validation checks that the value's
+    digest matches the *currently persisted* `password_digest` (i.e.
+    `password_digest_was`).
 
-    *Rafael Mendonça França*
+    This allows a password challenge to be done as part of a typical `update`
+    call, just like a password confirmation.  It also allows a password
+    challenge error to be handled in the same way as other validation errors.
 
-*   Remove deprecated `ActiveModel::Errors#keys`.
+    For example, in the controller, instead of:
 
-    *Rafael Mendonça França*
+    ```ruby
+    password_params = params.require(:password).permit(
+      :password_challenge,
+      :password,
+      :password_confirmation,
+    )
 
-*   Remove deprecated `ActiveModel::Errors#values`.
+    password_challenge = password_params.delete(:password_challenge)
+    @password_challenge_failed = !current_user.authenticate(password_challenge)
 
-    *Rafael Mendonça França*
+    if !@password_challenge_failed && current_user.update(password_params)
+      # ...
+    end
+    ```
 
-*   Remove deprecated `ActiveModel::Errors#slice!`.
+    You can now write:
 
-    *Rafael Mendonça França*
+    ```ruby
+    password_params = params.require(:password).permit(
+      :password_challenge,
+      :password,
+      :password_confirmation,
+    ).with_defaults(password_challenge: "")
 
-*   Remove deprecated `ActiveModel::Errors#to_h`.
+    if current_user.update(password_params)
+      # ...
+    end
+    ```
 
-    *Rafael Mendonça França*
+    And, in the view, instead of checking `@password_challenge_failed`, you can
+    render an error for the `password_challenge` field just as you would for
+    other form fields, including utilizing `config.action_view.field_error_proc`.
 
-*   Remove deprecated enumeration of `ActiveModel::Errors` instances as a Hash.
+    *Jonathan Hefner*
 
-    *Rafael Mendonça França*
+*   Support infinite ranges for `LengthValidator`s `:in`/`:within` options
 
-*   Clear secure password cache if password is set to `nil`
+    ```ruby
+    validates_length_of :first_name, in: ..30
+    ```
 
-    Before:
+    *fatkodima*
 
-       user.password = 'something'
-       user.password = nil
+*   Add support for beginless ranges to inclusivity/exclusivity validators:
 
-       user.password # => 'something'
+    ```ruby
+    validates_inclusion_of :birth_date, in: -> { (..Date.today) }
+    ```
 
-    Now:
+    *Bo Jeanes*
 
-       user.password = 'something'
-       user.password = nil
+*   Make validators accept lambdas without record argument
 
-       user.password # => nil
+    ```ruby
+    # Before
+    validates_comparison_of :birth_date, less_than_or_equal_to: ->(_record) { Date.today }
 
-    *Markus Doits*
+    # After
+    validates_comparison_of :birth_date, less_than_or_equal_to: -> { Date.today }
+    ```
 
-## Rails 7.0.0.alpha2 (September 15, 2021) ##
+    *fatkodima*
 
-*   No changes.
+*   Fix casting long strings to `Date`, `Time` or `DateTime`
 
+    *fatkodima*
 
-## Rails 7.0.0.alpha1 (September 15, 2021) ##
+*   Use different cache namespace for proxy calls
 
-*   Introduce `ActiveModel::API`.
-
-    Make `ActiveModel::API` the minimum API to talk with Action Pack and Action View.
-    This will allow adding more functionality to `ActiveModel::Model`.
-
-    *Petrik de Heus*, *Nathaniel Watts*
-
-*   Fix dirty check for Float::NaN and BigDecimal::NaN.
-
-    Float::NaN and BigDecimal::NaN in Ruby are [special values](https://bugs.ruby-lang.org/issues/1720)
-    and can't be compared with `==`.
-
-    *Marcelo Lauxen*
-
-*   Fix `to_json` for `ActiveModel::Dirty` object.
-
-    Exclude `mutations_from_database` attribute from json as it lead to recursion.
-
-    *Anil Maurya*
-
-*   Add `ActiveModel::AttributeSet#values_for_database`.
-
-    Returns attributes with values for assignment to the database.
+    Models can currently have different attribute bodies for the same method
+    names, leading to conflicts. Adding a new namespace `:active_model_proxy`
+    fixes the issue.
 
     *Chris Salzberg*
 
-*   Fix delegation in ActiveModel::Type::Registry#lookup and ActiveModel::Type.lookup.
-
-    Passing a last positional argument `{}` would be incorrectly considered as keyword argument.
-
-    *Benoit Daloze*
-
-*   Cache and re-use generated attribute methods.
-
-    Generated methods with identical implementations will now share their instruction sequences
-    leading to reduced memory retention, and slightly faster load time.
-
-    *Jean Boussier*
-
-*   Add `in: range`  parameter to `numericality` validator.
-
-    *Michal Papis*
-
-*   Add `locale` argument to `ActiveModel::Name#initialize` to be used to generate the `singular`,
-   `plural`, `route_key` and `singular_route_key` values.
-
-    *Lukas Pokorny*
-
-*   Make ActiveModel::Errors#inspect slimmer for readability
-
-    *lulalala*
-
-Please check [6-1-stable](https://github.com/rails/rails/blob/6-1-stable/activemodel/CHANGELOG.md) for previous changes.
+Please check [7-0-stable](https://github.com/rails/rails/blob/7-0-stable/activemodel/CHANGELOG.md) for previous changes.

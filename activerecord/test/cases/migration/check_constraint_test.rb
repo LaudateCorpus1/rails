@@ -43,6 +43,35 @@ if ActiveRecord::Base.connection.supports_check_constraints?
           else
             assert_equal "price > discounted_price", constraint.expression
           end
+
+          if current_adapter?(:PostgreSQLAdapter)
+            begin
+              # Test that complex expression is correctly parsed from the database
+              @connection.add_check_constraint(:trades,
+                "CASE WHEN price IS NOT NULL THEN true ELSE false END", name: "price_is_required")
+
+              constraint = @connection.check_constraints("trades").find { |c| c.name == "price_is_required" }
+              assert_includes constraint.expression, "WHEN price IS NOT NULL"
+            ensure
+              @connection.remove_check_constraint(:trades, name: "price_is_required")
+            end
+          end
+        end
+
+        if current_adapter?(:PostgreSQLAdapter)
+          def test_check_constraints_scoped_to_schemas
+            @connection.add_check_constraint :trades, "quantity > 0"
+
+            assert_no_changes -> { @connection.check_constraints("trades").size } do
+              @connection.create_schema "test_schema"
+              @connection.create_table "test_schema.trades" do |t|
+                t.integer :quantity
+              end
+              @connection.add_check_constraint "test_schema.trades", "quantity > 0"
+            end
+          ensure
+            @connection.drop_schema "test_schema"
+          end
         end
 
         def test_add_check_constraint
@@ -115,10 +144,34 @@ if ActiveRecord::Base.connection.supports_check_constraints?
             assert_predicate @connection.check_constraints("trades").first, :validated?
           end
 
+          def test_validated_check_constraint_exists
+            @connection.add_check_constraint :trades, "quantity > 0", name: "quantity_check", validate: false
+            assert_not @connection.check_constraint_exists?(:trades, name: "quantity_check", validate: true)
+
+            @connection.validate_check_constraint :trades, name: "quantity_check"
+            assert @connection.check_constraint_exists?(:trades, name: "quantity_check", validate: true)
+          end
+
           def test_validate_non_existing_check_constraint_raises
             assert_raises ArgumentError do
               @connection.validate_check_constraint :trades, name: "quantity_check"
             end
+          end
+
+          def test_schema_dumping_with_validate_false
+            @connection.add_check_constraint :trades, "quantity > 0", name: "quantity_check", validate: false
+
+            output = dump_table_schema "trades"
+
+            assert_match %r{\s+t.check_constraint "quantity > 0", name: "quantity_check", validate: false$}, output
+          end
+
+          def test_schema_dumping_with_validate_true
+            @connection.add_check_constraint :trades, "quantity > 0", name: "quantity_check", validate: true
+
+            output = dump_table_schema "trades"
+
+            assert_match %r{\s+t.check_constraint "quantity > 0", name: "quantity_check"$}, output
           end
         else
           # Check constraint should still be created, but should not be invalid
@@ -131,6 +184,22 @@ if ActiveRecord::Base.connection.supports_check_constraints?
             cc = check_constraints.first
             assert_predicate cc, :validated?
           end
+        end
+
+        def test_check_constraint_exists
+          @connection.add_check_constraint :trades, "quantity > 0", name: "quantity_check"
+
+          assert @connection.check_constraint_exists?(:trades, name: "quantity_check")
+          assert_not @connection.check_constraint_exists?(:non_trades, name: "quantity_check")
+          assert_not @connection.check_constraint_exists?(:trades, name: "other_check")
+        end
+
+        def test_check_constraint_exists_ensures_required_options
+          @connection.add_check_constraint :trades, "quantity > 0", name: "quantity_check"
+          error = assert_raises(ArgumentError) do
+            @connection.check_constraint_exists?(:trades, something: true)
+          end
+          assert_equal "At least one of :name or :expression must be supplied", error.message
         end
 
         def test_remove_check_constraint
@@ -150,12 +219,51 @@ if ActiveRecord::Base.connection.supports_check_constraints?
           else
             assert_equal "price > 0", constraint.expression
           end
+
+          @connection.remove_check_constraint :trades, name: :price_check # name as a symbol
+          assert_empty @connection.check_constraints("trades")
+        end
+
+        def test_removing_check_constraint_with_if_exists_option
+          @connection.add_check_constraint :trades, "quantity > 0", name: "quantity_check"
+
+          @connection.remove_check_constraint :trades, name: "quantity_check"
+
+          error = assert_raises ArgumentError do
+            @connection.remove_check_constraint :trades, name: "quantity_check"
+          end
+
+          assert_equal "Table 'trades' has no check constraint for {:name=>\"quantity_check\"}", error.message
+
+          assert_nothing_raised do
+            @connection.remove_check_constraint :trades, name: "quantity_check", if_exists: true
+          end
         end
 
         def test_remove_non_existing_check_constraint
           assert_raises(ArgumentError) do
             @connection.remove_check_constraint :trades, name: "nonexistent"
           end
+        end
+
+        def test_add_constraint_from_change_table_with_options
+          @connection.change_table :trades do |t|
+            t.check_constraint "price > 0", name: "price_check"
+          end
+
+          constraint = @connection.check_constraints("trades").first
+          assert_equal "trades", constraint.table_name
+          assert_equal "price_check", constraint.name
+        end
+
+        def test_remove_constraint_from_change_table_with_options
+          @connection.add_check_constraint :trades, "price > 0", name: "price_check"
+
+          @connection.change_table :trades do |t|
+            t.remove_check_constraint "price > 0", name: "price_check"
+          end
+
+          assert_equal 0, @connection.check_constraints("trades").size
         end
       end
     end

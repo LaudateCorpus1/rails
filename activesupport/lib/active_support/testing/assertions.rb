@@ -7,9 +7,9 @@ module ActiveSupport
     module Assertions
       UNTRACKED = Object.new # :nodoc:
 
-      # Asserts that an expression is not truthy. Passes if <tt>object</tt> is
-      # +nil+ or +false+. "Truthy" means "considered true in a conditional"
-      # like <tt>if foo</tt>.
+      # Asserts that an expression is not truthy. Passes if +object+ is +nil+ or
+      # +false+. "Truthy" means "considered true in a conditional" like <tt>if
+      # foo</tt>.
       #
       #   assert_not nil    # => true
       #   assert_not false  # => true
@@ -23,6 +23,20 @@ module ActiveSupport
         assert !object, message
       end
 
+      # Asserts that a block raises one of +exp+. This is an enhancement of the
+      # standard Minitest assertion method with the ability to test error
+      # messages.
+      #
+      #   assert_raises(ArgumentError, match: /incorrect param/i) do
+      #     perform_service(param: 'exception')
+      #   end
+      #
+      def assert_raises(*exp, match: nil, &block)
+        error = super(*exp, &block)
+        assert_match(match, error.message) if match
+        error
+      end
+
       # Assertion that the block should not raise an exception.
       #
       # Passes if evaluated code in the yielded block raises no exception.
@@ -31,7 +45,7 @@ module ActiveSupport
       #     perform_service(param: 'no_exception')
       #   end
       def assert_nothing_raised
-        yield
+        yield.tap { assert(true) }
       rescue => error
         raise Minitest::UnexpectedError.new(error)
       end
@@ -50,7 +64,7 @@ module ActiveSupport
       #   end
       #
       # An arbitrary positive or negative difference can be specified.
-      # The default is <tt>1</tt>.
+      # The default is +1+.
       #
       #   assert_difference 'Article.count', -1 do
       #     post :delete, params: { id: ... }
@@ -102,9 +116,10 @@ module ActiveSupport
         retval = _assert_nothing_raised_or_warn("assert_difference", &block)
 
         expressions.zip(exps, before) do |(code, diff), exp, before_value|
-          error  = "#{code.inspect} didn't change by #{diff}"
+          actual = exp.call
+          error  = "#{code.inspect} didn't change by #{diff}, but by #{actual - before_value}"
           error  = "#{message}.\n#{error}" if message
-          assert_equal(before_value + diff, exp.call, error)
+          assert_equal(before_value + diff, actual, error)
         end
 
         retval
@@ -159,7 +174,7 @@ module ActiveSupport
       #     @object = 42
       #   end
       #
-      # The keyword arguments :from and :to can be given to specify the
+      # The keyword arguments +:from+ and +:to+ can be given to specify the
       # expected initial value and the expected value after the block was
       # executed.
       #
@@ -179,7 +194,7 @@ module ActiveSupport
         retval = _assert_nothing_raised_or_warn("assert_changes", &block)
 
         unless from == UNTRACKED
-          error = "Expected change from #{from.inspect}"
+          error = "Expected change from #{from.inspect}, got #{before}"
           error = "#{message}.\n#{error}" if message
           assert from === before, error
         end
@@ -192,7 +207,7 @@ module ActiveSupport
         refute_equal before, after, error
 
         unless to == UNTRACKED
-          error = "Expected change to #{to}\n"
+          error = "Expected change to #{to}, got #{after}\n"
           error = "#{message}.\n#{error}" if message
           assert to === after, error
         end

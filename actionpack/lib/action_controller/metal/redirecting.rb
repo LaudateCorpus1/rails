@@ -21,7 +21,7 @@ module ActionController
     # * <tt>String</tt> not containing a protocol - The current protocol and host is prepended to the string.
     # * <tt>Proc</tt> - A block that will be executed in the controller's context. Should return any option accepted by +redirect_to+.
     #
-    # === Examples:
+    # === Examples
     #
     #   redirect_to action: "show", id: 5
     #   redirect_to @post
@@ -74,7 +74,7 @@ module ActionController
     #
     # Raises UnsafeRedirectError in the case of an unsafe redirect.
     #
-    # To allow any external redirects pass `allow_other_host: true`, though using a user-provided param in that case is unsafe.
+    # To allow any external redirects pass <tt>allow_other_host: true</tt>, though using a user-provided param in that case is unsafe.
     #
     #   redirect_to "https://rubyonrails.org", allow_other_host: true
     #
@@ -87,7 +87,7 @@ module ActionController
 
       self.status        = _extract_redirect_to_status(options, response_options)
       self.location      = _enforce_open_redirect_protection(_compute_redirect_to_location(request, options), allow_other_host: allow_other_host)
-      self.response_body = "<html><body>You are being <a href=\"#{ERB::Util.unwrapped_html_escape(response.location)}\">redirected</a>.</body></html>"
+      self.response_body = ""
     end
 
     # Soft deprecated alias for #redirect_back_or_to where the +fallback_location+ location is supplied as a keyword argument instead
@@ -117,7 +117,7 @@ module ActionController
     # * <tt>:allow_other_host</tt> - Allow or disallow redirection to the host that is different to the current host, defaults to true.
     #
     # All other options that can be passed to #redirect_to are accepted as
-    # options and the behavior is identical.
+    # options, and the behavior is identical.
     def redirect_back_or_to(fallback_location, allow_other_host: _allow_other_host, **options)
       if request.referer && (allow_other_host || _url_host_allowed?(request.referer))
         redirect_to request.referer, allow_other_host: allow_other_host, **options
@@ -195,7 +195,12 @@ module ActionController
       end
 
       def _url_host_allowed?(url)
-        URI(url.to_s).host == request.host
+        host = URI(url.to_s).host
+
+        return true if host == request.host
+        return false unless host.nil?
+        return false unless url.to_s.start_with?("/")
+        !url.to_s.start_with?("//")
       rescue ArgumentError, URI::Error
         false
       end

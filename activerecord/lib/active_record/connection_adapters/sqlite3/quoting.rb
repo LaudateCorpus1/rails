@@ -5,7 +5,7 @@ module ActiveRecord
     module SQLite3
       module Quoting # :nodoc:
         def quote_string(s)
-          @connection.class.quote(s)
+          ::SQLite3::Database.quote(s)
         end
 
         def quote_table_name_for_assignment(table, attr)
@@ -45,6 +45,19 @@ module ActiveRecord
           0
         end
 
+        def quote_default_expression(value, column) # :nodoc:
+          if value.is_a?(Proc)
+            value = value.call
+            if value.match?(/\A\w+\(.*\)\z/)
+              "(#{value})"
+            else
+              value
+            end
+          else
+            super
+          end
+        end
+
         def type_cast(value) # :nodoc:
           case value
           when BigDecimal
@@ -73,7 +86,7 @@ module ActiveRecord
           (
             (?:
               # "table_name"."column_name" | function(one or no argument)
-              ((?:\w+\.|"\w+"\.)?(?:\w+|"\w+")) | \w+\((?:|\g<2>)\)
+              ((?:\w+\.|"\w+"\.)?(?:\w+|"\w+") | \w+\((?:|\g<2>)\))
             )
             (?:(?:\s+AS)?\s+(?:\w+|"\w+"))?
           )
@@ -86,8 +99,9 @@ module ActiveRecord
           (
             (?:
               # "table_name"."column_name" | function(one or no argument)
-              ((?:\w+\.|"\w+"\.)?(?:\w+|"\w+")) | \w+\((?:|\g<2>)\)
+              ((?:\w+\.|"\w+"\.)?(?:\w+|"\w+") | \w+\((?:|\g<2>)\))
             )
+            (?:\s+COLLATE\s+(?:\w+|"\w+"))?
             (?:\s+ASC|\s+DESC)?
           )
           (?:\s*,\s*\g<1>)*

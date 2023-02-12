@@ -72,7 +72,7 @@ class ParametersAccessorsTest < ActiveSupport::TestCase
 
   test "each without a block returns an enumerator" do
     assert_kind_of Enumerator, @params.each
-    assert_equal @params, @params.each.to_h
+    assert_equal @params, ActionController::Parameters.new(@params.each.to_h)
   end
 
   test "each_pair carries permitted status" do
@@ -94,7 +94,7 @@ class ParametersAccessorsTest < ActiveSupport::TestCase
 
   test "each_pair without a block returns an enumerator" do
     assert_kind_of Enumerator, @params.each_pair
-    assert_equal @params, @params.each_pair.to_h
+    assert_equal @params, ActionController::Parameters.new(@params.each_pair.to_h)
   end
 
   test "each_value carries permitted status" do
@@ -147,6 +147,14 @@ class ParametersAccessorsTest < ActiveSupport::TestCase
   test "except retains unpermitted status" do
     assert_not_predicate @params.except(:person), :permitted?
     assert_not_predicate @params[:person].except(:name), :permitted?
+  end
+
+  test "exclude? returns true if the given key is not present in the params" do
+    assert @params.exclude?(:address)
+  end
+
+  test "exclude? returns false if the given key is present in the params" do
+    assert_not @params.exclude?(:person)
   end
 
   test "fetch retains permitted status" do
@@ -305,8 +313,8 @@ class ParametersAccessorsTest < ActiveSupport::TestCase
   end
 
   test "values returns an array of the values of the params" do
-    params = ActionController::Parameters.new(city: "Chicago", state: "Illinois")
-    assert_equal ["Chicago", "Illinois"], params.values
+    params = ActionController::Parameters.new(city: "Chicago", state: "Illinois", person: ActionController::Parameters.new(first_name: "David"))
+    assert_equal ["Chicago", "Illinois", ActionController::Parameters.new(first_name: "David")], params.values
   end
 
   test "values_at retains permitted status" do

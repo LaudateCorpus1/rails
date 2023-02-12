@@ -83,14 +83,14 @@ class ControllerClassTests < ActiveSupport::TestCase
     record.save
 
     dom_id = nil
-    assert_not_deprecated do
+    assert_not_deprecated(ActionController.deprecator) do
       dom_id = RecordIdentifierIncludedController.new.dom_id(record)
     end
 
     assert_equal "comment_1", dom_id
 
     dom_class = nil
-    assert_not_deprecated do
+    assert_not_deprecated(ActionController.deprecator) do
       dom_class = RecordIdentifierIncludedController.new.dom_class(record)
     end
     assert_equal "comment", dom_class
@@ -177,7 +177,11 @@ class PerformActionTest < ActionController::TestCase
     exception = assert_raise AbstractController::ActionNotFound do
       get :ello
     end
-    assert_match "Did you mean?", exception.message
+    if exception.respond_to?(:detailed_message)
+      assert_match "Did you mean?", exception.detailed_message
+    else
+      assert_match "Did you mean?", exception.message
+    end
   end
 
   def test_action_missing_should_work
@@ -216,7 +220,7 @@ class UrlOptionsTest < ActionController::TestCase
       set.draw do
         get "from_view", to: "url_options#from_view", as: :from_view
 
-        ActiveSupport::Deprecation.silence do
+        ActionDispatch.deprecator.silence do
           get ":controller/:action"
         end
       end
@@ -253,7 +257,7 @@ class DefaultUrlOptionsTest < ActionController::TestCase
       set.draw do
         get "from_view", to: "default_url_options#from_view", as: :from_view
 
-        ActiveSupport::Deprecation.silence do
+        ActionDispatch.deprecator.silence do
           get ":controller/:action"
         end
       end
@@ -273,7 +277,7 @@ class DefaultUrlOptionsTest < ActionController::TestCase
           resources :descriptions
         end
 
-        ActiveSupport::Deprecation.silence do
+        ActionDispatch.deprecator.silence do
           get ":controller/:action"
         end
       end

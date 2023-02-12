@@ -4,7 +4,7 @@ require "active_support/notifications/instrumenter"
 require "active_support/notifications/fanout"
 
 module ActiveSupport
-  # = Notifications
+  # = \Notifications
   #
   # <tt>ActiveSupport::Notifications</tt> provides an instrumentation API for
   # Ruby.
@@ -84,7 +84,7 @@ module ActiveSupport
   #   event.payload[:exception]         # => ["ArgumentError", "Invalid value"]
   #   event.payload[:exception_object]  # => #<ArgumentError: Invalid value>
   #
-  # As the earlier example depicts, the class <tt>ActiveSupport::Notifications::Event</tt>
+  # As the earlier example depicts, the class ActiveSupport::Notifications::Event
   # is able to take the arguments as they come and provide an object-oriented
   # interface to that data.
   #
@@ -237,13 +237,19 @@ module ActiveSupport
       #
       # Raises an error if invalid event name type is passed:
       #
-      #  ActiveSupport::Notifications.subscribe(:render) {|*args| ...}
-      #  #=> ArgumentError (pattern must be specified as a String, Regexp or empty)
+      #   ActiveSupport::Notifications.subscribe(:render) {|*args| ...}
+      #   #=> ArgumentError (pattern must be specified as a String, Regexp or empty)
       #
       def subscribe(pattern = nil, callback = nil, &block)
         notifier.subscribe(pattern, callback, monotonic: false, &block)
       end
 
+      # Performs the same functionality as #subscribe, but the +start+ and
+      # +finish+ block arguments are in monotonic time instead of wall-clock
+      # time. Monotonic time will not jump forward or backward (due to NTP or
+      # Daylights Savings). Use +monotonic_subscribe+ when accuracy of time
+      # duration is important. For example, computing elapsed time between
+      # two events.
       def monotonic_subscribe(pattern = nil, callback = nil, &block)
         notifier.subscribe(pattern, callback, monotonic: true, &block)
       end

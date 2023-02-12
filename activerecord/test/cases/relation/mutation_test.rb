@@ -32,10 +32,8 @@ module ActiveRecord
 
     test "#order! on non-string does not attempt regexp match for references" do
       obj = Object.new
-      assert_not_called(obj, :=~) do
-        assert relation.order!(obj)
-        assert_equal [obj], relation.order_values
-      end
+      assert relation.order!(obj)
+      assert_equal [obj], relation.order_values
     end
 
     test "extending!" do
@@ -135,6 +133,13 @@ module ActiveRecord
     test "skip_preloading!" do
       relation.skip_preloading!
       assert relation.skip_preloading_value
+    end
+
+    test "#regroup!" do
+      @relation = relation.group("foo")
+
+      assert relation.regroup!("bar").equal?(relation)
+      assert_equal ["bar"], relation.group_values
     end
 
     private

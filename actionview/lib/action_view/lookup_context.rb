@@ -13,7 +13,7 @@ module ActionView
   # view paths, used in the resolver cache lookup. Since this key is generated
   # only once during the request, it speeds up all cache accesses.
   class LookupContext # :nodoc:
-    attr_accessor :prefixes, :rendered_format
+    attr_accessor :prefixes
 
     singleton_class.attr_accessor :registered_details
     self.registered_details = []
@@ -148,11 +148,23 @@ module ActionView
       end
       alias :any_templates? :any?
 
+      def append_view_paths(paths)
+        @view_paths = build_view_paths(@view_paths.to_a + paths)
+      end
+
+      def prepend_view_paths(paths)
+        @view_paths = build_view_paths(paths + @view_paths.to_a)
+      end
+
     private
       # Whenever setting view paths, makes a copy so that we can manipulate them in
       # instance objects as we wish.
       def build_view_paths(paths)
-        ActionView::PathSet.new(Array(paths))
+        if ActionView::PathSet === paths
+          paths
+        else
+          ActionView::PathSet.new(Array(paths))
+        end
       end
 
       # Compute details hash and key according to user options (e.g. passed from #render).
@@ -250,12 +262,12 @@ module ActionView
         values.concat(default_formats) if values.delete "*/*"
         values.uniq!
 
-        invalid_values = (values - Template::Types.symbols)
-        unless invalid_values.empty?
+        unless values.all? { |v| Template::Types.symbols.include?(v) }
+          invalid_values = values - Template::Types.symbols
           raise ArgumentError, "Invalid formats: #{invalid_values.map(&:inspect).join(", ")}"
         end
 
-        if values == [:js]
+        if (values.length == 1) && (values[0] == :js)
           values << :html
           @html_fallback_for_js = true
         end

@@ -5,7 +5,7 @@ require "active_support/core_ext/module/delegation"
 require "json"
 
 module ActiveSupport
-  # Look for and parse json strings that look like ISO 8601 times.
+  # Look for and parse JSON strings that look like ISO 8601 times.
   mattr_accessor :parse_json_times
 
   module JSON
@@ -28,6 +28,7 @@ module ActiveSupport
           data
         end
       end
+      alias_method :load, :decode
 
       # Returns the class of the error that will be raised when there is an
       # error in decoding JSON. Using this method means you won't directly

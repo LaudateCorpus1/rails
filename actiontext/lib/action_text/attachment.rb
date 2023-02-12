@@ -8,7 +8,7 @@ module ActionText
 
     mattr_accessor :tag_name, default: "action-text-attachment"
 
-    ATTRIBUTES = %w( sgid content-type url href filename filesize width height previewable presentation caption )
+    ATTRIBUTES = %w( sgid content-type url href filename filesize width height previewable presentation caption content )
 
     class << self
       def fragment_by_canonicalizing_attachments(content)
@@ -91,7 +91,7 @@ module ActionText
 
     private
       def node_attributes
-        @node_attributes ||= ATTRIBUTES.map { |name| [ name.underscore, node[name] ] }.to_h.compact
+        @node_attributes ||= ATTRIBUTES.to_h { |name| [ name.underscore, node[name] ] }.compact
       end
 
       def attachable_attributes

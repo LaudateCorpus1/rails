@@ -478,6 +478,8 @@ module ActionView
 
       mattr_accessor :form_with_generates_ids, default: false
 
+      mattr_accessor :multiple_file_field_include_hidden, default: false
+
       # Creates a form tag based on mixing URLs, scopes, or models.
       #
       #   # Using just a URL:
@@ -494,7 +496,7 @@ module ActionView
       #     <%= form.text_field :title %>
       #   <% end %>
       #   # =>
-      #   <form method="post" data-remote="true">
+      #   <form method="post">
       #     <input type="text" name="title">
       #   </form>
       #
@@ -754,10 +756,14 @@ module ActionView
 
         if model
           if url != false
-            url ||= polymorphic_path(model, format: format)
+            url ||= if format.nil?
+              polymorphic_path(model, {})
+            else
+              polymorphic_path(model, format: format)
+            end
           end
 
-          model   = _object_for_form_builder(model)
+          model   = convert_to_model(_object_for_form_builder(model))
           scope ||= model_name_from_record_or_class(model).param_key
         end
 
@@ -1012,9 +1018,10 @@ module ActionView
       #   <% end %>
       #
       # Note that fields_for will automatically generate a hidden field
-      # to store the ID of the record. There are circumstances where this
-      # hidden field is not needed and you can pass <tt>include_id: false</tt>
-      # to prevent fields_for from rendering it automatically.
+      # to store the ID of the record if it responds to <tt>persisted?</tt>.
+      # There are circumstances where this hidden field is not needed and you
+      # can pass <tt>include_id: false</tt> to prevent fields_for from
+      # rendering it automatically.
       def fields_for(record_name, record_object = nil, options = {}, &block)
         options = { model: record_object, allow_method_names_outside_object: false, skip_default_ids: false }.merge!(options)
 
@@ -1080,7 +1087,7 @@ module ActionView
 
       # Returns a label tag tailored for labelling an input field for a specified attribute (identified by +method+) on an object
       # assigned to the template (identified by +object+). The text of label will default to the attribute name unless a translation
-      # is found in the current I18n locale (through helpers.label.<modelname>.<attribute>) or you specify it explicitly.
+      # is found in the current I18n locale (through <tt>helpers.label.<modelname>.<attribute></tt>) or you specify it explicitly.
       # Additional options on the label tag can be passed as a hash with +options+. These options will be tagged
       # onto the HTML as an HTML element attribute as in the example shown, except for the <tt>:value</tt> option, which is designed to
       # target labels for radio_button tags (where the value is used in the ID of the input tag).
@@ -1214,6 +1221,7 @@ module ActionView
       # * Creates standard HTML attributes for the tag.
       # * <tt>:disabled</tt> - If set to true, the user will not be able to use this input.
       # * <tt>:multiple</tt> - If set to true, *in most updated browsers* the user will be allowed to select multiple files.
+      # * <tt>:include_hidden</tt> - When <tt>multiple: true</tt> and <tt>include_hidden: true</tt>, the field will be prefixed with an <tt><input type="hidden"></tt> field with an empty value to support submitting an empty collection of files.
       # * <tt>:accept</tt> - If set to one or multiple mime-types, the user will be suggested a filter when choosing a file. You still need to set up model validations.
       #
       # ==== Examples
@@ -1232,7 +1240,9 @@ module ActionView
       #   file_field(:attachment, :file, class: 'file_input')
       #   # => <input type="file" id="attachment_file" name="attachment[file]" class="file_input" />
       def file_field(object_name, method, options = {})
-        Tags::FileField.new(object_name, method, self, convert_direct_upload_option_to_url(method, options.dup)).render
+        options = { include_hidden: multiple_file_field_include_hidden }.merge!(options)
+
+        Tags::FileField.new(object_name, method, self, convert_direct_upload_option_to_url(options.dup)).render
       end
 
       # Returns a textarea opening and closing tag set tailored for accessing a specified attribute (identified by +method+)
@@ -1432,10 +1442,12 @@ module ActionView
       # formatted by trying to call +strftime+ with "%H:%M" on the object's value.
       # It is also possible to override this by passing the "value" option.
       #
-      # === Options
-      # * Accepts same options as time_field_tag
+      # ==== Options
       #
-      # === Example
+      # Supports the same options as FormTagHelper#time_field_tag.
+      #
+      # ==== Examples
+      #
       #   time_field("task", "started_at")
       #   # => <input id="task_started_at" name="task[started_at]" type="time" />
       #
@@ -1486,6 +1498,12 @@ module ActionView
       #   datetime_field("user", "born_on", min: "2014-05-20T00:00:00")
       #   # => <input id="user_born_on" name="user[born_on]" type="datetime-local" min="2014-05-20T00:00:00.000" />
       #
+      # By default, provided datetimes will be formatted including seconds. You can render just the date, hour,
+      # and minute by passing <tt>include_seconds: false</tt>.
+      #
+      #   @user.born_on = Time.current
+      #   datetime_field("user", "born_on", include_seconds: false)
+      #   # => <input id="user_born_on" name="user[born_on]" type="datetime-local" value="2014-05-20T14:35" />
       def datetime_field(object_name, method, options = {})
         Tags::DatetimeLocalField.new(object_name, method, self, options).render
       end
@@ -1547,7 +1565,8 @@ module ActionView
       # Returns an input tag of type "number".
       #
       # ==== Options
-      # * Accepts same options as number_field_tag
+      #
+      # Supports the same options as FormTagHelper#number_field_tag.
       def number_field(object_name, method, options = {})
         Tags::NumberField.new(object_name, method, self, options).render
       end
@@ -1555,7 +1574,8 @@ module ActionView
       # Returns an input tag of type "range".
       #
       # ==== Options
-      # * Accepts same options as range_field_tag
+      #
+      # Supports the same options as FormTagHelper#range_field_tag.
       def range_field(object_name, method, options = {})
         Tags::RangeField.new(object_name, method, self, options).render
       end
@@ -1725,7 +1745,7 @@ module ActionView
       # <tt><button></tt> element should be treated as the <tt><form></tt>
       # element's submit button, regardless of where it exists in the DOM.
       def id
-        options.dig(:html, :id)
+        options.dig(:html, :id) || options[:id]
       end
 
       # Generate an HTML <tt>id</tt> attribute value for the given field
@@ -1744,8 +1764,8 @@ module ActionView
       # <tt>aria-describedby</tt> attribute referencing the <tt><span></tt>
       # element, sharing a common <tt>id</tt> root (<tt>post_title</tt>, in this
       # case).
-      def field_id(method, *suffixes, index: @index)
-        @template.field_id(@object_name, method, *suffixes, index: index)
+      def field_id(method, *suffixes, namespace: @options[:namespace], index: @index)
+        @template.field_id(@object_name, method, *suffixes, namespace: namespace, index: index)
       end
 
       # Generate an HTML <tt>name</tt> attribute value for the given name and
@@ -2064,6 +2084,18 @@ module ActionView
       # DateHelper that are designed to work with an object as base, like
       # FormOptionsHelper#collection_select and DateHelper#datetime_select.
       #
+      # +fields_for+ tries to be smart about parameters, but it can be confused if both
+      # name and value parameters are provided and the provided value has the shape of an
+      # option Hash. To remove the ambiguity, explicitly pass an option Hash, even if empty.
+      #
+      #   <%= form_for @person do |person_form| %>
+      #     ...
+      #     <%= fields_for :permission, @person.permission, {} do |permission_fields| %>
+      #       Admin?: <%= check_box_tag permission_fields.field_name(:admin), @person.permission[:admin] %>
+      #     <% end %>
+      #     ...
+      #   <% end %>
+      #
       # === Nested Attributes Examples
       #
       # When the object belonging to the current scope has a nested attribute
@@ -2244,8 +2276,9 @@ module ActionView
       # to store the ID of the record. There are circumstances where this
       # hidden field is not needed and you can pass <tt>include_id: false</tt>
       # to prevent fields_for from rendering it automatically.
-      def fields_for(record_name, record_object = nil, fields_options = {}, &block)
-        fields_options, record_object = record_object, nil if record_object.is_a?(Hash) && record_object.extractable_options?
+      def fields_for(record_name, record_object = nil, fields_options = nil, &block)
+        fields_options, record_object = record_object, nil if fields_options.nil? && record_object.is_a?(Hash) && record_object.extractable_options?
+        fields_options ||= {}
         fields_options[:builder] ||= options[:builder]
         fields_options[:namespace] = options[:namespace]
         fields_options[:parent_builder] = self
@@ -2280,7 +2313,7 @@ module ActionView
         @template.fields_for(record_name, record_object, fields_options, &block)
       end
 
-      # See the docs for the <tt>ActionView::FormHelper.fields</tt> helper method.
+      # See the docs for the ActionView::Helpers::FormHelper#fields helper method.
       def fields(scope = nil, model: nil, **options, &block)
         options[:allow_method_names_outside_object] = true
         options[:skip_default_ids] = !FormHelper.form_with_generates_ids
@@ -2292,7 +2325,7 @@ module ActionView
 
       # Returns a label tag tailored for labelling an input field for a specified attribute (identified by +method+) on an object
       # assigned to the template (identified by +object+). The text of label will default to the attribute name unless a translation
-      # is found in the current I18n locale (through helpers.label.<modelname>.<attribute>) or you specify it explicitly.
+      # is found in the current I18n locale (through <tt>helpers.label.<modelname>.<attribute></tt>) or you specify it explicitly.
       # Additional options on the label tag can be passed as a hash with +options+. These options will be tagged
       # onto the HTML as an HTML element attribute as in the example shown, except for the <tt>:value</tt> option, which is designed to
       # target labels for radio_button tags (where the value is used in the ID of the input tag).
@@ -2485,6 +2518,7 @@ module ActionView
       # * Creates standard HTML attributes for the tag.
       # * <tt>:disabled</tt> - If set to true, the user will not be able to use this input.
       # * <tt>:multiple</tt> - If set to true, *in most updated browsers* the user will be allowed to select multiple files.
+      # * <tt>:include_hidden</tt> - When <tt>multiple: true</tt> and <tt>include_hidden: true</tt>, the field will be prefixed with an <tt><input type="hidden"></tt> field with an empty value to support submitting an empty collection of files.
       # * <tt>:accept</tt> - If set to one or multiple mime-types, the user will be suggested a filter when choosing a file. You still need to set up model validations.
       #
       # ==== Examples
@@ -2577,7 +2611,7 @@ module ActionView
       #   # => <button name='button' type='submit'>Create post</button>
       #
       #   button(:draft, value: true)
-      #   # => <button name="post[draft]" value="true" type="submit">Create post</button>
+      #   # => <button id="post_draft" name="post[draft]" value="true" type="submit">Create post</button>
       #
       #   button do
       #     content_tag(:strong, 'Ask me!')
@@ -2596,7 +2630,7 @@ module ActionView
       #   button(:draft, value: true) do
       #     content_tag(:strong, "Save as draft")
       #   end
-      #   # =>  <button name="post[draft]" value="true" type="submit">
+      #   # =>  <button id="post_draft" name="post[draft]" value="true" type="submit">
       #   #       <strong>Save as draft</strong>
       #   #     </button>
       #
@@ -2605,7 +2639,7 @@ module ActionView
         when Hash
           value, options = nil, value
         when Symbol
-          value, options[:name] = nil, field_name(value)
+          value, options = nil, { name: field_name(value), id: field_id(value) }.merge!(options.to_h)
         end
         value ||= submit_default_value
 

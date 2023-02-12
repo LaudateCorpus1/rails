@@ -31,12 +31,34 @@ module ActionMailer
     #       ContactMailer.welcome.deliver_later
     #     end
     #   end
+    #
+    # If a block is passed, the method returns the +Mail::Message+s that were
+    # processed, enabling further analysis.
+    #
+    #   def test_emails_more_thoroughly
+    #     email = assert_emails 1 do
+    #       ContactMailer.welcome.deliver_now
+    #     end
+    #     assert_email "Hi there", email.subject
+    #
+    #     emails = assert_emails 2 do
+    #       ContactMailer.welcome.deliver_now
+    #       ContactMailer.welcome.deliver_later
+    #     end
+    #     assert_email "Hi there", emails.first.subject
+    #   end
     def assert_emails(number, &block)
       if block_given?
         original_count = ActionMailer::Base.deliveries.size
         perform_enqueued_jobs(only: ->(job) { delivery_job_filter(job) }, &block)
         new_count = ActionMailer::Base.deliveries.size
-        assert_equal number, new_count - original_count, "#{number} emails expected, but #{new_count - original_count} were sent"
+        diff = new_count - original_count
+        assert_equal number, diff, "#{number} emails expected, but #{diff} were sent"
+        if diff == 1
+          ActionMailer::Base.deliveries.last
+        else
+          ActionMailer::Base.deliveries.last(diff)
+        end
       else
         assert_equal number, ActionMailer::Base.deliveries.size
       end
@@ -94,16 +116,41 @@ module ActionMailer
     end
 
     # Asserts that a specific email has been enqueued, optionally
-    # matching arguments.
+    # matching arguments and/or params.
     #
     #   def test_email
     #     ContactMailer.welcome.deliver_later
     #     assert_enqueued_email_with ContactMailer, :welcome
     #   end
     #
+    #   def test_email_with_parameters
+    #     ContactMailer.with(greeting: "Hello").welcome.deliver_later
+    #     assert_enqueued_email_with ContactMailer, :welcome, args: { greeting: "Hello" }
+    #   end
+    #
     #   def test_email_with_arguments
     #     ContactMailer.welcome("Hello", "Goodbye").deliver_later
     #     assert_enqueued_email_with ContactMailer, :welcome, args: ["Hello", "Goodbye"]
+    #   end
+    #
+    #   def test_email_with_named_arguments
+    #     ContactMailer.welcome(greeting: "Hello", farewell: "Goodbye").deliver_later
+    #     assert_enqueued_email_with ContactMailer, :welcome, args: [{ greeting: "Hello", farewell: "Goodbye" }]
+    #   end
+    #
+    #   def test_email_with_parameters_and_arguments
+    #     ContactMailer.with(greeting: "Hello").welcome("Cheers", "Goodbye").deliver_later
+    #     assert_enqueued_email_with ContactMailer, :welcome, params: { greeting: "Hello" }, args: ["Cheers", "Goodbye"]
+    #   end
+    #
+    #   def test_email_with_parameters_and_named_arguments
+    #     ContactMailer.with(greeting: "Hello").welcome(farewell: "Goodbye").deliver_later
+    #     assert_enqueued_email_with ContactMailer, :welcome, params: { greeting: "Hello" }, args: [{farewell: "Goodbye"}]
+    #   end
+    #
+    #   def test_email_with_parameterized_mailer
+    #     ContactMailer.with(greeting: "Hello").welcome.deliver_later
+    #     assert_enqueued_email_with ContactMailer.with(greeting: "Hello"), :welcome
     #   end
     #
     # If a block is passed, that block should cause the specified email
@@ -123,9 +170,15 @@ module ActionMailer
     #       ContactMailer.with(email: 'user@example.com').welcome.deliver_later
     #     end
     #   end
-    def assert_enqueued_email_with(mailer, method, args: nil, queue: ActionMailer::Base.deliver_later_queue_name || "default", &block)
+    def assert_enqueued_email_with(mailer, method, params: nil, args: nil, queue: ActionMailer::Base.deliver_later_queue_name || "default", &block)
+      if mailer.is_a? ActionMailer::Parameterized::Mailer
+        params = mailer.instance_variable_get(:@params)
+        mailer = mailer.instance_variable_get(:@mailer)
+      end
       args = if args.is_a?(Hash)
         [mailer.to_s, method.to_s, "deliver_now", params: args, args: []]
+      elsif params.present?
+        [mailer.to_s, method.to_s, "deliver_now", params: params, args: Array(args)]
       else
         [mailer.to_s, method.to_s, "deliver_now", args: Array(args)]
       end
